@@ -21,6 +21,7 @@ function MouseInteractiveComponent() {
   const [uploadCompleted, setUploadCompleted] = useState(false)
   const [extremeMode, setExtremeMode] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
+  const [isRecreateMode, setIsRecreateMode] = useState(false) // 재생성 모드
   const canvasRef = useRef(null)
   const fileInputRef = useRef(null)
   const audioContextRef = useRef(null)
@@ -152,7 +153,7 @@ function MouseInteractiveComponent() {
       const newPosition = { x: e.clientX, y: e.clientY }
       const currentTime = Date.now()
       
-      // 기본 위치 업데이트
+      // 즉시 위치 업데이트 - 가장 빠른 반응속도
       setMousePosition(newPosition)
       
       // 속도 계산 (간소화)
@@ -170,22 +171,26 @@ function MouseInteractiveComponent() {
         const randomIndex = Math.floor(Math.random() * uploadedImages.length)
         const selectedImage = uploadedImages[randomIndex]
         
-        // 속도에 따른 변형
-        const isVertical = Math.random() < 0.5
-        const scale = 1 + (speed * 0.05)
+        // 속도에 따른 랜덤 변형 - 세로 또는 가로 중 랜덤 선택
+        const isVertical = Math.random() < 0.5 // 50% 확률로 세로 또는 가로 변형
+        const baseScale = 1.5 // 기본 늘어남
+        const speedBonus = speed * 0.08 // 속도에 따른 추가 변형
         
-        // 즉시 이미지 생성
+        const scaleX = isVertical ? 1 : (baseScale + speedBonus) // 가로 변형
+        const scaleY = isVertical ? (baseScale + speedBonus) : 1 // 세로 변형
+        
+        // 영구적으로 남는 이미지 생성
         setImageEffects(prev => [...prev, {
           id: currentTime + Math.random(),
           image: selectedImage,
           x: newPosition.x,
           y: newPosition.y,
-          scaleX: isVertical ? 1 : scale,
-          scaleY: isVertical ? scale : 1,
-          opacity: 0.7,
-          life: 1,
-          decay: 0.03
-        }].slice(-8)) // 최대 8개만 유지
+          scaleX: scaleX, // 랜덤 가로 변형
+          scaleY: scaleY, // 랜덤 세로 변형
+          opacity: 0.8,
+          permanent: true, // 영구적으로 유지
+          speed: speed // 속도 정보 저장
+        }]) // 개수 제한 제거
       }
 
       // 스파클 효과 (간소화)
@@ -317,8 +322,7 @@ function MouseInteractiveComponent() {
             rotation: Math.random() * 360,
             rotationSpeed: 5 + Math.random() * 10,
             opacity: 0.6 + Math.random() * 0.4,
-            life: 1,
-            decay: 0.008 + Math.random() * 0.012,
+            permanent: true, // 영구적으로 유지
             velocityX: Math.cos(angle) * (3 + Math.random() * 5),
             velocityY: Math.sin(angle) * (3 + Math.random() * 5),
             timestamp: Date.now(),
@@ -336,15 +340,14 @@ function MouseInteractiveComponent() {
           rotation: Math.random() * 360,
           rotationSpeed: 15,
           opacity: 0.8,
-          life: 1,
-          decay: 0.01,
+          permanent: true, // 영구적으로 유지
           velocityX: 0,
           velocityY: 0,
           timestamp: Date.now(),
           blendMode: 'screen'
         }
         
-        setImageEffects(prev => [...prev, ...burstImages, centerImage].slice(-25)) // 성능 최적화: 개수 제한
+        setImageEffects(prev => [...prev, ...burstImages, centerImage]) // 개수 제한 제거
       }
     }
 
@@ -414,20 +417,52 @@ function MouseInteractiveComponent() {
         .filter(wave => wave.opacity > 0)
       )
 
-      // 간단한 이미지 효과 업데이트
+      // 이미지 효과 업데이트
       setImageEffects(prev => prev
-        .map(effect => ({
-          ...effect,
-          life: effect.life - effect.decay,
-          opacity: effect.life - effect.decay
-        }))
-        .filter(effect => effect.life > 0)
+        .map(effect => {
+          if (effect.permanent) {
+            // Recreate 모드일 때만 변형 적용
+            if (isRecreateMode) {
+              // 커서와의 거리 계산
+              const distanceToMouse = Math.sqrt(
+                Math.pow(mousePosition.x - effect.x, 2) + 
+                Math.pow(mousePosition.y - effect.y, 2)
+              )
+              
+              // 거리에 따른 영향도 (가까울수록 큰 변형)
+              const influence = Math.max(0, 300 - distanceToMouse) / 300
+              
+              if (influence > 0) {
+                // 부드러운 랜덤 변형
+                const randomFactor = 0.1 // 변형 강도
+                const newScaleX = (effect.scaleX || 1) + (Math.random() - 0.5) * randomFactor * influence
+                const newScaleY = (effect.scaleY || 1) + (Math.random() - 0.5) * randomFactor * influence
+                const newRotation = (effect.rotation || 0) + (Math.random() - 0.5) * 10 * influence
+                
+                return {
+                  ...effect,
+                  scaleX: Math.max(0.3, Math.min(3, newScaleX)), // 0.3 ~ 3 범위 제한
+                  scaleY: Math.max(0.3, Math.min(3, newScaleY)),
+                  rotation: newRotation,
+                  opacity: Math.max(0.3, Math.min(1, effect.opacity + (Math.random() - 0.5) * 0.1 * influence))
+                }
+              }
+            }
+            return effect // 영구적인 이미지는 기본적으로 변경하지 않음
+          }
+          return {
+            ...effect,
+            life: effect.life - effect.decay,
+            opacity: effect.life - effect.decay
+          }
+        })
+        .filter(effect => effect.permanent || effect.life > 0) // 영구적이거나 수명이 남은 것만 유지
       )
       
     }, 4) // 250fps로 변경 - 극초고속 반응
 
     return () => clearInterval(interval)
-  }, [])
+  }, [isRecreateMode, mousePosition])
 
   // 마우스 위치를 기반으로 색상 생성
   const getColorFromPosition = (x, y) => {
@@ -544,13 +579,14 @@ function MouseInteractiveComponent() {
 
         {/* 마우스 커서 대체 */}
         <div
-          className="fixed w-6 h-6 rounded-full border-2 border-white pointer-events-none z-40 transition-all duration-75"
+          className="fixed w-6 h-6 rounded-full border-2 border-white pointer-events-none z-40"
           style={{
             left: mousePosition.x - 12,
             top: mousePosition.y - 12,
             backgroundColor: getColorFromPosition(mousePosition.x, mousePosition.y),
             transform: isClicking ? 'scale(1.5)' : 'scale(1)',
-            boxShadow: isClicking ? '0 0 20px currentColor' : '0 0 10px currentColor'
+            boxShadow: isClicking ? '0 0 20px currentColor' : '0 0 10px currentColor',
+            transition: 'transform 0.1s ease, box-shadow 0.1s ease' // transform만 부드럽게, 위치는 즉시
           }}
         />
 
@@ -822,14 +858,15 @@ function MouseInteractiveComponent() {
               width: 50,
               height: 50,
               opacity: effect.opacity,
-              transform: `scaleX(${effect.scaleX}) scaleY(${effect.scaleY})`,
-              transition: 'none'
+              transform: `scaleX(${effect.scaleX || 1}) scaleY(${effect.scaleY || 1}) rotate(${effect.rotation || 0}deg)`,
+              transition: isRecreateMode ? 'transform 0.1s ease-out, opacity 0.1s ease-out' : 'none',
+              willChange: isRecreateMode ? 'transform, opacity' : 'auto'
             }}
           >
             <img
               src={effect.image.src}
               alt=""
-              className="w-full h-full object-cover rounded-lg"
+              className="w-full h-full object-cover"
               draggable={false}
             />
           </div>
@@ -949,44 +986,64 @@ function MouseInteractiveComponent() {
           }} />
         </div>
 
-        {/* Main Content Area */}
-        <div className="flex items-center justify-center min-h-screen p-8">
-          <div className="text-center space-y-6 z-10 relative">
-            <h2 className="text-4xl md:text-6xl font-bold mb-8">
-              Move Your Mouse!
-            </h2>
-            <p className="text-lg md:text-xl opacity-80 max-w-2xl mx-auto">
-              Recreate your images!
-            </p>
+        {/* Main Content Area - 이미지가 없을 때만 표시 */}
+        {uploadedImages.length === 0 && (
+          <div className="flex items-center justify-center min-h-screen p-8">
+            <div className="text-center space-y-6 z-10 relative">
+              <h2 className="text-4xl md:text-6xl font-bold mb-8">
+                Move Your Mouse!
+              </h2>
+              <p className="text-lg md:text-xl opacity-80 max-w-2xl mx-auto">
+                Recreate your images!
+              </p>
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Recreate Button - 이미지가 있을 때만 표시 */}
+        {uploadedImages.length > 0 && (
+          <div className="fixed top-4 right-4 z-50">
+            <button
+              onClick={() => setIsRecreateMode(!isRecreateMode)}
+              className={`px-6 py-3 rounded-lg font-bold text-white transition-all duration-300 transform hover:scale-105 shadow-lg ${
+                isRecreateMode 
+                  ? 'bg-red-600 hover:bg-red-700 animate-pulse' 
+                  : 'bg-green-600 hover:bg-green-700'
+              }`}
+            >
+              {isRecreateMode ? '🔄 RECREATING...' : '🎨 RECREATE'}
+            </button>
+          </div>
+        )}
 
         {/* Image Upload Section */}
         <div className={`fixed bottom-4 left-4 right-4 z-50 bg-black bg-opacity-90 rounded-lg backdrop-blur-sm mx-auto border-2 border-gray-600 transition-all duration-300 ${
           isExpanded ? 'max-w-6xl p-4' : 'max-w-2xl p-3'
         }`}>
-          <div className="flex items-center justify-between mb-2">
-            <h3 className={`font-bold ${isExpanded ? 'text-lg' : 'text-md'}`}>🖼️ Image Effects Panel</h3>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setIsExpanded(!isExpanded)}
-                className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-1 px-3 rounded text-sm transition duration-300 transform hover:scale-105"
-              >
-                {isExpanded ? '🔽 축소' : '🔼 확대'}
-              </button>
-              <button
-                onClick={() => setShowImageUpload(!showImageUpload)}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1 px-3 rounded text-sm transition duration-300 transform hover:scale-105"
-              >
-                {showImageUpload ? '❌ 숨기기' : '👁️ 보이기'}
-              </button>
-            </div>
+          <div className={`flex items-center mb-2 ${uploadedImages.length > 0 ? 'justify-between' : 'justify-center'}`}>
+            <h3 className={`font-bold ${isExpanded ? 'text-lg' : 'text-md'}`}>Choose your five favorite image</h3>
+            {uploadedImages.length > 0 && (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setIsExpanded(!isExpanded)}
+                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-1 px-3 rounded text-sm transition duration-300 transform hover:scale-105"
+                >
+                  {isExpanded ? '🔽 Collapse' : '🔼 Expand'}
+                </button>
+                <button
+                  onClick={() => setShowImageUpload(!showImageUpload)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1 px-3 rounded text-sm transition duration-300 transform hover:scale-105"
+                >
+                  {showImageUpload ? '❌ Hide' : '👁️ Show'}
+                </button>
+              </div>
+            )}
           </div>
 
           {showImageUpload && (
             <div className={`${isExpanded ? 'space-y-4' : 'space-y-2'}`}>
               {/* File Upload Area */}
-              <div className={`border-2 border-dashed border-yellow-400 rounded-lg text-center bg-gray-800 bg-opacity-50 hover:bg-opacity-70 transition-all duration-300 ${
+              <div className={`rounded-lg text-center bg-gray-800 bg-opacity-50 hover:bg-opacity-70 transition-all duration-300 ${
                 isExpanded ? 'p-8' : 'p-4'
               }`}>
                 <input
@@ -999,7 +1056,6 @@ function MouseInteractiveComponent() {
                   id="image-upload-input"
                 />
                 <div className={`${isExpanded ? 'space-y-4' : 'space-y-2'}`}>
-                  <div className={`${isExpanded ? 'text-4xl' : 'text-2xl'}`}>📸</div>
                   <button
                     onClick={() => {
                       console.log('Upload button clicked')
@@ -1009,11 +1065,11 @@ function MouseInteractiveComponent() {
                       isExpanded ? 'py-4 px-8 text-base' : 'py-2 px-4 text-sm'
                     }`}
                   >
-                    📁 이미지 선택 (최대 5개)
+                    📁 SELECT FIVE IMAGES
                   </button>
                   {isExpanded && (
                     <>
-                      <p className="text-sm text-yellow-300 font-semibold">
+                      <p className="text-sm text-gray-300 font-semibold">
                         Click the button above to choose your images!
                       </p>
                       <p className="text-xs text-gray-400">
@@ -1024,20 +1080,6 @@ function MouseInteractiveComponent() {
                 </div>
               </div>
 
-              {/* Upload Status */}
-              {uploadedImages.length === 0 && isExpanded && (
-                <div className="text-center p-4 bg-yellow-900 bg-opacity-30 rounded-lg border border-yellow-600">
-                  <p className="text-yellow-300 font-semibold">No images uploaded yet</p>
-                  <p className="text-sm text-yellow-200 mt-1">Upload images to unlock amazing effects!</p>
-                </div>
-              )}
-              
-              {/* Compact Status */}
-              {uploadedImages.length === 0 && !isExpanded && (
-                <div className="text-center py-2">
-                  <p className="text-yellow-300 text-sm">이미지 없음 ({uploadedImages.length}/5)</p>
-                </div>
-              )}
 
               {/* Uploaded Images Display */}
               {uploadedImages.length > 0 && (
@@ -1046,17 +1088,17 @@ function MouseInteractiveComponent() {
                 }`}>
                   <div className={`flex items-center justify-between ${isExpanded ? 'mb-3' : 'mb-2'}`}>
                     <h4 className={`font-semibold text-green-300 ${isExpanded ? 'text-md' : 'text-sm'}`}>
-                      ✅ 이미지 ({uploadedImages.length}/5)
+                      ✅ Images ({uploadedImages.length}/5)
                     </h4>
                     <div className="flex gap-2">
                       {uploadedImages.length >= 5 && !uploadCompleted && (
                         <button
                           onClick={handleUploadComplete}
-                          className={`bg-yellow-600 hover:bg-yellow-700 text-white font-bold rounded-lg transition duration-300 transform hover:scale-105 shadow-lg pulse-animation ${
+                          className={`bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition duration-300 transform hover:scale-105 shadow-lg pulse-animation ${
                             isExpanded ? 'py-2 px-4 text-sm' : 'py-1 px-2 text-xs'
                           }`}
                         >
-                          🚀 완료!
+                          🚀 Complete!
                         </button>
                       )}
                       <button
@@ -1068,7 +1110,7 @@ function MouseInteractiveComponent() {
                           isExpanded ? 'py-1 px-3 text-sm' : 'py-1 px-2 text-xs'
                         }`}
                       >
-                        🗑️ {isExpanded ? 'Clear All' : '삭제'}
+                        🗑️ {isExpanded ? 'Clear All' : 'Delete'}
                       </button>
                     </div>
                   </div>
@@ -1128,10 +1170,10 @@ function MouseInteractiveComponent() {
                     <div className="mt-4 p-4 bg-green-900 bg-opacity-50 rounded-lg border border-green-600">
                     {uploadCompleted && extremeMode ? (
                       <div>
-                        <p className="text-sm text-yellow-200 mb-2">
+                        <p className="text-sm text-gray-200 mb-2">
                           🚀 <strong>극단적 모드 활성화!</strong> 마우스 속도에 따라 이미지가 극단적으로 변형됩니다!
                         </p>
-                        <div className="text-xs text-yellow-100 space-y-1">
+                        <div className="text-xs text-gray-100 space-y-1">
                           <div>💨 <strong>빠른 움직임:</strong> 이미지 크기 15배까지 확대, 극단적 왜곡</div>
                           <div>🌪️ <strong>방향 변화:</strong> 이미지 기울임과 늘어남 3배 강화</div>
                           <div>🔥 <strong>속도 증가:</strong> 회전 속도와 변형 강도 극대화</div>
@@ -1140,10 +1182,10 @@ function MouseInteractiveComponent() {
                       </div>
                     ) : uploadedImages.length >= 5 ? (
                       <div>
-                        <p className="text-sm text-yellow-200 mb-2">
+                        <p className="text-sm text-gray-200 mb-2">
                           ⚡ <strong>준비 완료!</strong> 업로드 완료 버튼을 눌러 극단적 모드를 활성화하세요!
                         </p>
-                        <p className="text-xs text-yellow-100">
+                        <p className="text-xs text-gray-100">
                           극단적 모드에서는 마우스 움직임에 따라 이미지가 극도로 변형됩니다!
                         </p>
                       </div>
