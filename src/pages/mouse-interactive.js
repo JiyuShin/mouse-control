@@ -956,75 +956,8 @@ function MouseInteractiveComponent() {
               Move Your Mouse!
             </h2>
             <p className="text-lg md:text-xl opacity-80 max-w-2xl mx-auto">
-              Mouse movements and clicks are converted into various visual effects in real-time.
-              <br />
-              💫 Fast Movement → Sparkle Effects | 🌊 Click → Ripple Waves | ⚡ Double Click → Special Effects
+              Recreate your images!
             </p>
-
-            {/* Effect Mode Controls */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-12 max-w-4xl mx-auto">
-              <button
-                onClick={() => setEffectMode('sparkle')}
-                className={`p-4 rounded-lg backdrop-blur-sm transition-all duration-300 cursor-pointer transform hover:scale-105 ${
-                  effectMode === 'sparkle' 
-                    ? 'bg-white bg-opacity-30 border-2 border-white' 
-                    : 'bg-white bg-opacity-10 border-2 border-transparent hover:bg-opacity-20'
-                }`}
-              >
-                <div className="text-2xl mb-2">💫</div>
-                <h3 className="text-sm font-semibold mb-1">Sparkle Burst</h3>
-                <p className="text-xs opacity-80">Sparkling effects only</p>
-              </button>
-
-              <button
-                onClick={() => setEffectMode('ripple')}
-                className={`p-4 rounded-lg backdrop-blur-sm transition-all duration-300 cursor-pointer transform hover:scale-105 ${
-                  effectMode === 'ripple' 
-                    ? 'bg-white bg-opacity-30 border-2 border-white' 
-                    : 'bg-white bg-opacity-10 border-2 border-transparent hover:bg-opacity-20'
-                }`}
-              >
-                <div className="text-2xl mb-2">🌊</div>
-                <h3 className="text-sm font-semibold mb-1">Ripple Waves</h3>
-                <p className="text-xs opacity-80">Click ripple effects only</p>
-              </button>
-
-              <button
-                onClick={() => setEffectMode('wave')}
-                className={`p-4 rounded-lg backdrop-blur-sm transition-all duration-300 cursor-pointer transform hover:scale-105 ${
-                  effectMode === 'wave' 
-                    ? 'bg-white bg-opacity-30 border-2 border-white' 
-                    : 'bg-white bg-opacity-10 border-2 border-transparent hover:bg-opacity-20'
-                }`}
-              >
-                <div className="text-2xl mb-2">⚡</div>
-                <h3 className="text-sm font-semibold mb-1">Special Waves</h3>
-                <p className="text-xs opacity-80">Fast movement waves only</p>
-              </button>
-            </div>
-
-            {/* Current Mode Display */}
-            <div className="mt-6 text-center">
-              <p className="text-sm opacity-70">
-                Current Mode: <span className="font-semibold text-yellow-300">
-                  {effectMode === 'sparkle' ? 'Sparkle Burst' :
-                   effectMode === 'ripple' ? 'Ripple Waves' :
-                   effectMode === 'wave' ? 'Special Waves' :
-                   'Sparkle Burst'}
-                </span>
-              </p>
-              <p className="text-xs opacity-60 mt-1">
-                🔊 Audio: {audioContextRef.current ? 
-                  (uploadedImages.length > 0 ? 'Click sounds enabled' : 'Upload images for sounds') : 
-                  'Loading...'}
-              </p>
-              <p className="text-xs opacity-60 mt-1">
-                🏃‍♂️ Mouse Speed: <span className="font-bold text-green-300">{Math.round(mouseSpeed * 10) / 10}</span>
-                {mouseSpeed > 20 && ' (VERY FAST!)'}
-                {mouseSpeed > 10 && mouseSpeed <= 20 && ' (Fast)'}
-                {mouseSpeed <= 5 && ' (Slow)'}
-              </p>
-            </div>
           </div>
         </div>
 
