@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Head from 'next/head'
 import dynamic from 'next/dynamic'
+import Link from 'next/link'
 
 function AdvancedMouseComponent() {
   const [mouseData, setMouseData] = useState({
@@ -337,12 +338,12 @@ function AdvancedMouseComponent() {
             </div>
 
             <div className="mt-8">
-              <a 
+              <Link 
                 href="/"
                 className="inline-block bg-white bg-opacity-20 hover:bg-opacity-30 text-white font-bold py-3 px-6 rounded-lg transition duration-300 backdrop-blur-sm"
               >
                 ← Back to Home
-              </a>
+              </Link>
             </div>
           </div>
         </div>
