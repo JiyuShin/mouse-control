@@ -147,78 +147,95 @@ function MouseInteractiveComponent() {
     randomSound()
   }
 
-  // 마우스 움직임 추적 - 이미지 즉시 반응
+  // 마우스 움직임 추적 - 고성능 최적화
   useEffect(() => {
+    let mouseMoveThrottle = false
+    
     const handleMouseMove = (e) => {
       const newPosition = { x: e.clientX, y: e.clientY }
-      const currentTime = Date.now()
       
-      // 즉시 위치 업데이트 - 가장 빠른 반응속도
+      // 즉시 커서 위치만 업데이트 (가장 중요한 반응성)
       setMousePosition(newPosition)
       
-      // 속도 계산 (간소화)
-      const deltaX = newPosition.x - lastMousePos.x
-      const deltaY = newPosition.y - lastMousePos.y
-      const speed = Math.sqrt(deltaX * deltaX + deltaY * deltaY)
+      // 나머지 계산은 쓰로틀링으로 성능 향상
+      if (mouseMoveThrottle) return
+      mouseMoveThrottle = true
       
-      setMouseSpeed(speed)
-      setLastMousePos(newPosition)
-      setLastMouseTime(currentTime)
-
-      // 이미지가 있으면 무조건 즉시 생성 - 모든 마우스 움직임에 반응
-      if (uploadedImages.length > 0) {
-        // 랜덤 이미지 선택
-        const randomIndex = Math.floor(Math.random() * uploadedImages.length)
-        const selectedImage = uploadedImages[randomIndex]
+      requestAnimationFrame(() => {
+        const currentTime = Date.now()
+        const deltaX = newPosition.x - lastMousePos.x
+        const deltaY = newPosition.y - lastMousePos.y
+        const speed = Math.sqrt(deltaX * deltaX + deltaY * deltaY)
         
-        // 속도에 따른 랜덤 변형 - 세로 또는 가로 중 랜덤 선택
-        const isVertical = Math.random() < 0.5 // 50% 확률로 세로 또는 가로 변형
-        const baseScale = 1.5 // 기본 늘어남
-        const speedBonus = speed * 0.08 // 속도에 따른 추가 변형
-        
-        const scaleX = isVertical ? 1 : (baseScale + speedBonus) // 가로 변형
-        const scaleY = isVertical ? (baseScale + speedBonus) : 1 // 세로 변형
-        
-        // 영구적으로 남는 이미지 생성
-        setImageEffects(prev => [...prev, {
-          id: currentTime + Math.random(),
-          image: selectedImage,
-          x: newPosition.x,
-          y: newPosition.y,
-          scaleX: scaleX, // 랜덤 가로 변형
-          scaleY: scaleY, // 랜덤 세로 변형
-          opacity: 0.8,
-          permanent: true, // 영구적으로 유지
-          speed: speed // 속도 정보 저장
-        }]) // 개수 제한 제거
-      }
+        setMouseSpeed(speed)
+        setLastMousePos(newPosition)
+        setLastMouseTime(currentTime)
 
-      // 스파클 효과 (간소화)
-      if (effectMode === 'sparkle' && speed > 3) {
-        setSparkles(prev => [...prev, {
-          id: currentTime,
-          x: newPosition.x,
-          y: newPosition.y,
-          size: 3,
-          life: 1,
-          decay: 0.1,
-          color: `hsl(${Math.random() * 360}, 80%, 70%)`
-        }].slice(-5))
-      }
+        // 이미지 생성 최적화 - 속도 기반 제한
+        if (uploadedImages.length > 0 && speed > 1) { // 최소 속도 필요
+          // 이미지 생성 빈도 제한 (성능 향상)
+          if (Math.random() < 0.3) { // 30% 확률로만 생성
+            const randomIndex = Math.floor(Math.random() * uploadedImages.length)
+            const selectedImage = uploadedImages[randomIndex]
+            
+            const isVertical = Math.random() < 0.5
+            const baseScale = 1.2 // 기본 스케일 줄임
+            const speedBonus = Math.min(speed * 0.05, 2) // 최대 변형 제한
+            
+            const scaleX = isVertical ? 1 : (baseScale + speedBonus)
+            const scaleY = isVertical ? (baseScale + speedBonus) : 1
+            
+            setImageEffects(prev => {
+              const newEffect = {
+                id: currentTime + Math.random(),
+                image: selectedImage,
+                x: newPosition.x,
+                y: newPosition.y,
+                scaleX: scaleX,
+                scaleY: scaleY,
+                opacity: 0.7,
+                permanent: true,
+                speed: speed,
+                rotation: 0
+              }
+              
+              // 최대 개수 제한으로 메모리 사용량 관리
+              const maxEffects = 150
+              return [...prev, newEffect].slice(-maxEffects)
+            })
+          }
+        }
 
-      // 리플 효과는 클릭할 때만
-      // 웨이브 효과 (간소화)
-      if (effectMode === 'wave' && speed > 5) {
-        setWaves(prev => [...prev, {
-          id: currentTime,
-          x: newPosition.x,
-          y: newPosition.y,
-          radius: 0,
-          maxRadius: 30,
-          opacity: 1,
-          timestamp: currentTime
-        }].slice(-3))
-      }
+        // 스파클 효과 최적화
+        if (effectMode === 'sparkle' && speed > 5) { // 임계값 높임
+          setSparkles(prev => [...prev, {
+            id: currentTime,
+            x: newPosition.x + (Math.random() - 0.5) * 20,
+            y: newPosition.y + (Math.random() - 0.5) * 20,
+            size: 2 + Math.random() * 2,
+            life: 1,
+            decay: 0.15, // 빠른 소멸
+            color: `hsl(${Math.random() * 360}, 80%, 70%)`,
+            angle: Math.random() * Math.PI * 2,
+            velocity: 1 + Math.random()
+          }].slice(-8)) // 개수 더 제한
+        }
+
+        // 웨이브 효과 최적화
+        if (effectMode === 'wave' && speed > 8) { // 임계값 더 높임
+          setWaves(prev => [...prev, {
+            id: currentTime,
+            x: newPosition.x,
+            y: newPosition.y,
+            radius: 0,
+            maxRadius: 25, // 크기 줄임
+            opacity: 1,
+            timestamp: currentTime
+          }].slice(-2)) // 개수 더 제한
+        }
+        
+        mouseMoveThrottle = false
+      })
     }
 
     const handleMouseDown = (e) => {
@@ -366,103 +383,109 @@ function MouseInteractiveComponent() {
     }
   }, [uploadedImages, effectMode, lastMousePos, lastMouseTime]) // 의존성 추가
 
-  // 모든 효과들의 애니메이션 업데이트 (성능 최적화)
+  // 모든 효과들의 애니메이션 업데이트 (고성능 최적화)
   useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now()
+    let animationId
+    let lastTime = performance.now()
+    
+    const animate = (currentTime) => {
+      const deltaTime = currentTime - lastTime
       
-      // 트레일 포인트 정리 - 더 짧은 지속시간으로 성능 향상
-      setTrailPoints(prev => prev.filter(point => now - point.timestamp < 800))
-      
-      // 스파클 애니메이션 업데이트 - 개수 제한
-      setSparkles(prev => prev
-        .map(sparkle => ({
-          ...sparkle,
-          x: sparkle.x + Math.cos(sparkle.angle) * sparkle.velocity,
-          y: sparkle.y + Math.sin(sparkle.angle) * sparkle.velocity + (sparkle.gravity || 0),
-          life: sparkle.life - sparkle.decay,
-          size: sparkle.size * 0.98,
-          velocity: sparkle.velocity * 0.95
-        }))
-        .filter(sparkle => sparkle.life > 0 && sparkle.size > 0.5)
-        .slice(-25) // 성능 최적화: 스파클 개수 제한
-      )
-      
-      // 리플 효과 업데이트
-      setRipples(prev => prev
-        .map(ripple => {
+      // 60fps로 제한 (16.67ms)
+      if (deltaTime >= 16.67) {
+        const now = Date.now()
+        
+        // 배치 업데이트로 성능 향상
+        const updates = {
+          trailPoints: [],
+          sparkles: [],
+          ripples: [],
+          waves: [],
+          imageEffects: []
+        }
+        
+        // 트레일 포인트 정리 (간소화)
+        setTrailPoints(prev => {
+          updates.trailPoints = prev.filter(point => now - point.timestamp < 500) // 더 짧게
+          return updates.trailPoints.slice(-8) // 최대 8개만
+        })
+        
+        // 스파클 효과 간소화
+        setSparkles(prev => {
+          updates.sparkles = prev
+            .map(sparkle => ({
+              ...sparkle,
+              x: sparkle.x + (sparkle.velocityX || Math.cos(sparkle.angle) * sparkle.velocity),
+              y: sparkle.y + (sparkle.velocityY || Math.sin(sparkle.angle) * sparkle.velocity),
+              life: sparkle.life - sparkle.decay,
+              size: sparkle.size * 0.99
+            }))
+            .filter(sparkle => sparkle.life > 0.1 && sparkle.size > 1)
+          return updates.sparkles.slice(-10) // 최대 10개만
+        })
+        
+        // 리플/웨이브 효과 간소화
+        setRipples(prev => prev.filter(ripple => {
           const age = now - ripple.timestamp
-          const progress = age / 1000 // 1초 동안 확산
-          return {
-            ...ripple,
-            radius: ripple.maxRadius * progress,
-            opacity: Math.max(0, 1 - progress)
-          }
-        })
-        .filter(ripple => ripple.opacity > 0)
-      )
-      
-      // 웨이브 효과 업데이트
-      setWaves(prev => prev
-        .map(wave => {
+          return age < 800 // 더 빠른 제거
+        }).slice(-5)) // 최대 5개
+        
+        setWaves(prev => prev.filter(wave => {
           const age = now - wave.timestamp
-          const duration = wave.special ? 2000 : 1000
-          const progress = age / duration
-          return {
-            ...wave,
-            radius: wave.maxRadius * progress,
-            opacity: Math.max(0, 1 - progress)
-          }
-        })
-        .filter(wave => wave.opacity > 0)
-      )
-
-      // 이미지 효과 업데이트
-      setImageEffects(prev => prev
-        .map(effect => {
-          if (effect.permanent) {
-            // Recreate 모드일 때만 변형 적용
-            if (isRecreateMode) {
-              // 커서와의 거리 계산
-              const distanceToMouse = Math.sqrt(
-                Math.pow(mousePosition.x - effect.x, 2) + 
-                Math.pow(mousePosition.y - effect.y, 2)
-              )
-              
-              // 거리에 따른 영향도 (가까울수록 큰 변형)
-              const influence = Math.max(0, 300 - distanceToMouse) / 300
-              
-              if (influence > 0) {
-                // 부드러운 랜덤 변형
-                const randomFactor = 0.1 // 변형 강도
-                const newScaleX = (effect.scaleX || 1) + (Math.random() - 0.5) * randomFactor * influence
-                const newScaleY = (effect.scaleY || 1) + (Math.random() - 0.5) * randomFactor * influence
-                const newRotation = (effect.rotation || 0) + (Math.random() - 0.5) * 10 * influence
+          return age < 600 // 더 빠른 제거
+        }).slice(-3)) // 최대 3개
+        
+        // 이미지 효과 최적화 - Recreate 모드에서만 계산
+        if (isRecreateMode) {
+          setImageEffects(prev => {
+            const maxImages = 100 // 최대 이미지 수 제한
+            return prev
+              .map(effect => {
+                if (!effect.permanent) return effect
                 
-                return {
-                  ...effect,
-                  scaleX: Math.max(0.3, Math.min(3, newScaleX)), // 0.3 ~ 3 범위 제한
-                  scaleY: Math.max(0.3, Math.min(3, newScaleY)),
-                  rotation: newRotation,
-                  opacity: Math.max(0.3, Math.min(1, effect.opacity + (Math.random() - 0.5) * 0.1 * influence))
+                // 거리 계산 최적화
+                const dx = mousePosition.x - effect.x
+                const dy = mousePosition.y - effect.y
+                const distanceSquared = dx * dx + dy * dy
+                
+                // 거리가 너무 멀면 변형하지 않음 (성능 향상)
+                if (distanceSquared > 90000) return effect // 300px^2
+                
+                const distance = Math.sqrt(distanceSquared)
+                const influence = Math.max(0, (300 - distance) / 300)
+                
+                if (influence > 0.1) { // 최소 영향도 설정
+                  const mouseScale = 1 + influence * 1.5 // 변형 강도 줄임
+                  const angle = Math.atan2(dy, dx)
+                  
+                  return {
+                    ...effect,
+                    scaleX: Math.max(0.5, Math.min(3, effect.scaleX * 0.8 + mouseScale * 0.2)),
+                    scaleY: Math.max(0.5, Math.min(3, effect.scaleY * 0.8 + mouseScale * 0.2)),
+                    rotation: effect.rotation + angle * 10 * influence,
+                    opacity: Math.max(0.6, Math.min(1, 0.8 + influence * 0.2))
+                  }
                 }
-              }
-            }
-            return effect // 영구적인 이미지는 기본적으로 변경하지 않음
-          }
-          return {
-            ...effect,
-            life: effect.life - effect.decay,
-            opacity: effect.life - effect.decay
-          }
-        })
-        .filter(effect => effect.permanent || effect.life > 0) // 영구적이거나 수명이 남은 것만 유지
-      )
+                return effect
+              })
+              .slice(-maxImages) // 최대 개수 제한
+          })
+        }
+        
+        lastTime = currentTime
+      }
       
-    }, 4) // 250fps로 변경 - 극초고속 반응
-
-    return () => clearInterval(interval)
-  }, [isRecreateMode, mousePosition])
+      animationId = requestAnimationFrame(animate)
+    }
+    
+    animationId = requestAnimationFrame(animate)
+    
+    return () => {
+      if (animationId) {
+        cancelAnimationFrame(animationId)
+      }
+    }
+  }, [isRecreateMode, mousePosition.x, mousePosition.y])
 
   // 마우스 위치를 기반으로 색상 생성
   const getColorFromPosition = (x, y) => {
@@ -847,30 +870,46 @@ function MouseInteractiveComponent() {
           }
         })}
 
-        {/* 커서 따라다니는 이미지 - 즉시 반응 */}
-        {imageEffects.map((effect) => (
-          <div
-            key={effect.id}
-            className="fixed pointer-events-none z-50"
-            style={{
-              left: effect.x - 25,
-              top: effect.y - 25,
-              width: 50,
-              height: 50,
-              opacity: effect.opacity,
-              transform: `scaleX(${effect.scaleX || 1}) scaleY(${effect.scaleY || 1}) rotate(${effect.rotation || 0}deg)`,
-              transition: isRecreateMode ? 'transform 0.1s ease-out, opacity 0.1s ease-out' : 'none',
-              willChange: isRecreateMode ? 'transform, opacity' : 'auto'
-            }}
-          >
-            <img
-              src={effect.image.src}
-              alt=""
-              className="w-full h-full object-cover"
-              draggable={false}
-            />
-          </div>
-        ))}
+        {/* 커서 따라다니는 이미지 - 고성능 최적화 */}
+        {imageEffects.map((effect) => {
+          // 화면 밖의 이미지는 렌더링하지 않음 (성능 향상)
+          const size = 40
+          const isVisible = effect.x > -size && effect.x < (typeof window !== 'undefined' ? window.innerWidth + size : 2000) &&
+                           effect.y > -size && effect.y < (typeof window !== 'undefined' ? window.innerHeight + size : 2000)
+          
+          if (!isVisible) return null
+          
+          return (
+            <div
+              key={effect.id}
+              className="fixed pointer-events-none z-40"
+              style={{
+                left: effect.x - size/2,
+                top: effect.y - size/2,
+                width: size,
+                height: size,
+                opacity: effect.opacity || 0.7,
+                transform: `scale3d(${effect.scaleX || 1}, ${effect.scaleY || 1}, 1) rotate(${effect.rotation || 0}deg)`,
+                transition: isRecreateMode ? 'transform 0.05s ease-out' : 'none',
+                willChange: isRecreateMode ? 'transform' : 'auto',
+                backfaceVisibility: 'hidden', // GPU 가속
+                perspective: '1000px'
+              }}
+            >
+              <img
+                src={effect.image.src}
+                alt=""
+                className="w-full h-full object-cover"
+                style={{
+                  borderRadius: '15%',
+                  imageRendering: 'auto'
+                }}
+                draggable={false}
+                loading="lazy"
+              />
+            </div>
+          )
+        })}
 
         {/* 클릭 효과 - 이미지가 있으면 이미지로, 없으면 기본 도형으로 */}
         {clickHistory.map((click) => {
@@ -1211,32 +1250,52 @@ function MouseInteractiveComponent() {
           )}
         </div>
 
-        {/* CSS 애니메이션 */}
+        {/* CSS 애니메이션 - GPU 가속 최적화 */}
         <style jsx>{`
+          * {
+            -webkit-transform: translateZ(0);
+            -moz-transform: translateZ(0);
+            -ms-transform: translateZ(0);
+            -o-transform: translateZ(0);
+            transform: translateZ(0);
+          }
+          
           @keyframes pulse {
             0% {
-              transform: scale(0.5);
+              transform: scale3d(0.5, 0.5, 1);
               opacity: 1;
             }
             100% {
-              transform: scale(1);
+              transform: scale3d(1, 1, 1);
               opacity: 0.7;
             }
           }
 
           @keyframes pulse-animation {
             0%, 100% {
-              transform: scale(1);
+              transform: scale3d(1, 1, 1);
               box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.7);
             }
             50% {
-              transform: scale(1.05);
+              transform: scale3d(1.05, 1.05, 1);
               box-shadow: 0 0 0 10px rgba(251, 191, 36, 0);
             }
           }
 
           .pulse-animation {
             animation: pulse-animation 2s infinite;
+            will-change: transform, box-shadow;
+          }
+          
+          img {
+            will-change: transform;
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+          }
+          
+          .fixed {
+            will-change: transform, opacity;
+            contain: layout style paint;
           }
         `}</style>
       </div>
