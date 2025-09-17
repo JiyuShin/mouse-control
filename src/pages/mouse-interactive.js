@@ -26,6 +26,7 @@ function MouseInteractiveComponent() {
   const fileInputRef = useRef(null)
   const audioContextRef = useRef(null)
   const lastEffectTimeRef = useRef(0)
+  const lastMotionSoundTimeRef = useRef(0)
 
   // 오디오 컨텍스트 초기화
   useEffect(() => {
@@ -37,6 +38,13 @@ function MouseInteractiveComponent() {
       }
     }
   }, [])
+
+  // 이미지가 5장 이상 업로드되면 업로드 패널 자동 숨김
+  useEffect(() => {
+    if (uploadedImages.length >= 5) {
+      setShowImageUpload(false)
+    }
+  }, [uploadedImages])
 
   // 랜덤 소리 생성 함수들
   const playClickSound = (intensity = 1, imageIndex = 0) => {
@@ -148,6 +156,59 @@ function MouseInteractiveComponent() {
     randomSound()
   }
 
+  // 마우스 속도 기반 사운드 (느림=작은소리, 빠름=크고맑은소리)
+  const playMotionSound = (speed = 0, deltaX = 0, imageIndex = 0) => {
+    if (!audioContextRef.current) return
+
+    const audioContext = audioContextRef.current
+    if (audioContext.state === 'suspended') {
+      audioContext.resume()
+    }
+
+    // 속도에 따른 볼륨: 느리면 작게(0.02), 빠르면 크게(0.4)
+    const clampedSpeed = Math.min(speed, 80)
+    const volume = 0.02 + (clampedSpeed / 80) * 0.38 // 0.02 ~ 0.4로 더 큰 차이
+    
+    // 속도에 따른 주파수: 느리면 낮은음(150Hz), 빠르면 높고 맑은음(800Hz)
+    const baseFreq = 150 + (clampedSpeed / 80) * 650 // 150Hz ~ 800Hz
+    const dirBend = deltaX > 0 ? 1.1 : 0.9 // 방향에 따른 미세한 피치 변화
+    const freq = baseFreq * dirBend
+
+    const oscillator = audioContext.createOscillator()
+    const gainNode = audioContext.createGain()
+    const filter = audioContext.createBiquadFilter()
+
+    oscillator.connect(filter)
+    filter.connect(gainNode)
+    gainNode.connect(audioContext.destination)
+
+    // 속도에 따른 필터 설정: 빠를수록 더 맑고 선명한 소리
+    filter.type = 'lowpass'
+    const filterFreq = 400 + (clampedSpeed / 80) * 1600 // 400Hz ~ 2000Hz
+    filter.frequency.setValueAtTime(filterFreq, audioContext.currentTime)
+    filter.Q.setValueAtTime(1.5, audioContext.currentTime) // 더 선명한 소리
+
+    // 웨이브 타입도 속도에 따라 변경: 느리면 부드러운 sine, 빠르면 밝은 triangle
+    oscillator.type = speed > 15 ? 'triangle' : 'sine'
+    oscillator.frequency.setValueAtTime(freq, audioContext.currentTime)
+
+    // 사운드 지속시간과 페이드: 속도에 따라 조절
+    const duration = speed > 20 ? 0.12 : 0.08
+    const now = audioContext.currentTime
+    
+    gainNode.gain.setValueAtTime(0, now)
+    gainNode.gain.linearRampToValueAtTime(volume, now + 0.01) // 빠른 어택
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration) // 부드러운 릴리즈
+
+    oscillator.start(now)
+    oscillator.stop(now + duration)
+
+    // 디버그용 로그 (속도에 따른 사운드 확인)
+    if (Math.random() < 0.1) { // 10% 확률로 로그
+      console.log(`🔊 Sound: speed=${speed.toFixed(1)}, vol=${volume.toFixed(2)}, freq=${freq.toFixed(0)}Hz`)
+    }
+  }
+
   // 마우스 움직임 추적 - 고성능 최적화
   useEffect(() => {
     let mouseMoveThrottle = false
@@ -172,8 +233,8 @@ function MouseInteractiveComponent() {
         setLastMousePos(newPosition)
         setLastMouseTime(currentTime)
 
-        // 이미지 생성 - 업로드 패널을 숨긴 뒤에만 동작, 속도에 비례해 길이 증가(느리면 짧음/빠르면 김)
-        if (!showImageUpload && uploadedImages.length > 0 && speed > 0.2) {
+         // 이미지 생성 - 업로드 패널을 숨긴 뒤에만 동작, 속도에 비례해 길이 증가(느리면 짧음/빠르면 김)
+         if (!showImageUpload && uploadedImages.length > 0 && speed > 0.1) { // 임계값 낮춤
           const nowPerf = typeof performance !== 'undefined' ? performance.now() : Date.now()
           // 프레임당 1회만 생성 (약 60~80fps)
           if (nowPerf - lastEffectTimeRef.current >= 12) {
@@ -208,6 +269,12 @@ function MouseInteractiveComponent() {
               const maxEffects = 100
               return [...prev, newEffect].slice(-maxEffects)
             })
+
+             // 마우스 속도 기반 모션 사운드 (더 자주 재생되도록 간격 단축)
+             if (nowPerf - lastMotionSoundTimeRef.current >= 8) { // 24ms -> 8ms로 단축
+               lastMotionSoundTimeRef.current = nowPerf
+               playMotionSound(speed, deltaX, randomIndex)
+             }
           }
         }
 
@@ -1063,7 +1130,8 @@ function MouseInteractiveComponent() {
           </div>
         )}
 
-        {/* Image Upload Section */}
+        {/* Image Upload Section - 이미지 5장 업로드 후에는 숨김 */}
+        {uploadedImages.length < 5 && (
         <div className={`fixed bottom-4 left-4 right-4 z-50 bg-black bg-opacity-90 rounded-lg backdrop-blur-sm mx-auto border-2 border-gray-600 transition-all duration-300 ${
           isExpanded ? 'max-w-6xl p-4' : 'max-w-2xl p-3'
         }`}>
@@ -1257,6 +1325,7 @@ function MouseInteractiveComponent() {
             </div>
           )}
         </div>
+        )}
 
         {/* CSS 애니메이션 - GPU 가속 최적화 */}
         <style jsx>{`
