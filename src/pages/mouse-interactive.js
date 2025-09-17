@@ -25,6 +25,7 @@ function MouseInteractiveComponent() {
   const canvasRef = useRef(null)
   const fileInputRef = useRef(null)
   const audioContextRef = useRef(null)
+  const lastEffectTimeRef = useRef(0)
 
   // 오디오 컨텍스트 초기화
   useEffect(() => {
@@ -171,64 +172,68 @@ function MouseInteractiveComponent() {
         setLastMousePos(newPosition)
         setLastMouseTime(currentTime)
 
-        // 이미지 생성 최적화 - 속도 기반 제한
-        if (uploadedImages.length > 0 && speed > 1) { // 최소 속도 필요
-          // 이미지 생성 빈도 제한 (성능 향상)
-          if (Math.random() < 0.3) { // 30% 확률로만 생성
+        // 이미지 생성 - 업로드 패널을 숨긴 뒤에만 동작, 속도에 비례해 길이 증가(느리면 짧음/빠르면 김)
+        if (!showImageUpload && uploadedImages.length > 0 && speed > 0.2) {
+          const nowPerf = typeof performance !== 'undefined' ? performance.now() : Date.now()
+          // 프레임당 1회만 생성 (약 60~80fps)
+          if (nowPerf - lastEffectTimeRef.current >= 12) {
+            lastEffectTimeRef.current = nowPerf
+
             const randomIndex = Math.floor(Math.random() * uploadedImages.length)
             const selectedImage = uploadedImages[randomIndex]
-            
-            const isVertical = Math.random() < 0.5
-            const baseScale = 1.2 // 기본 스케일 줄임
-            const speedBonus = Math.min(speed * 0.05, 2) // 최대 변형 제한
-            
-            const scaleX = isVertical ? 1 : (baseScale + speedBonus)
-            const scaleY = isVertical ? (baseScale + speedBonus) : 1
-            
+
+            // 세로/가로 중 하나로 길게. 속도에 비례한 길이, 반대축은 얇게 처리
+            const orientationIsVertical = Math.random() < 0.5
+            const elongation = 1 + Math.min(speed * 0.15, 8) // 속도가 빠를수록 더 길게
+            const thickness = 0.6 // 얇게 보이도록
+
+            const scaleX = orientationIsVertical ? thickness : elongation
+            const scaleY = orientationIsVertical ? elongation : thickness
+
             setImageEffects(prev => {
               const newEffect = {
                 id: currentTime + Math.random(),
                 image: selectedImage,
                 x: newPosition.x,
                 y: newPosition.y,
-                scaleX: scaleX,
-                scaleY: scaleY,
-                opacity: 0.7,
+                scaleX,
+                scaleY,
+                opacity: 0.85,
                 permanent: true,
-                speed: speed,
+                speed,
                 rotation: 0
               }
-              
-              // 최대 개수 제한으로 메모리 사용량 관리
-              const maxEffects = 150
+
+              // 최대 개수 제한으로 메모리 사용량 관리 (더 낮춰서 버벅임 완화)
+              const maxEffects = 100
               return [...prev, newEffect].slice(-maxEffects)
             })
           }
         }
 
-        // 스파클 효과 최적화
-        if (effectMode === 'sparkle' && speed > 5) { // 임계값 높임
+        // 스파클 효과 최적화 (버벅임 완화: 개수/빈도/수명 조정)
+        if (effectMode === 'sparkle' && speed > 7) { // 임계값 조금 더 높임
           setSparkles(prev => [...prev, {
             id: currentTime,
             x: newPosition.x + (Math.random() - 0.5) * 20,
             y: newPosition.y + (Math.random() - 0.5) * 20,
             size: 2 + Math.random() * 2,
-            life: 1,
-            decay: 0.15, // 빠른 소멸
+            life: 0.9,
+            decay: 0.2, // 더 빠른 소멸
             color: `hsl(${Math.random() * 360}, 80%, 70%)`,
             angle: Math.random() * Math.PI * 2,
             velocity: 1 + Math.random()
-          }].slice(-8)) // 개수 더 제한
+          }].slice(-6)) // 개수 더 제한
         }
 
-        // 웨이브 효과 최적화
-        if (effectMode === 'wave' && speed > 8) { // 임계값 더 높임
+        // 웨이브 효과 최적화 (버벅임 완화)
+        if (effectMode === 'wave' && speed > 10) { // 임계값 더 높임
           setWaves(prev => [...prev, {
             id: currentTime,
             x: newPosition.x,
             y: newPosition.y,
             radius: 0,
-            maxRadius: 25, // 크기 줄임
+            maxRadius: 20, // 크기 더 줄임
             opacity: 1,
             timestamp: currentTime
           }].slice(-2)) // 개수 더 제한
@@ -319,8 +324,8 @@ function MouseInteractiveComponent() {
         }])
       }
 
-      // 클릭 시 이미지 폭발 효과 (이미지 모드이거나 전체 모드일 때)
-      if (uploadedImages.length > 0 && (effectMode === 'image' || effectMode === 'all')) {
+      // 클릭 시 이미지 폭발 효과 (이미지 모드이거나 전체 모드일 때) - 업로드 패널이 숨겨진 뒤에만 동작
+      if (!showImageUpload && uploadedImages.length > 0 && (effectMode === 'image' || effectMode === 'all')) {
         console.log(`Generating click image effects`)
         
         // 성능 최적화: 폭발 이미지 개수 제한
@@ -381,7 +386,7 @@ function MouseInteractiveComponent() {
       window.removeEventListener('mousedown', handleMouseDown)
       window.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [uploadedImages, effectMode, lastMousePos, lastMouseTime]) // 의존성 추가
+  }, [uploadedImages, effectMode, lastMousePos, lastMouseTime, showImageUpload]) // 업로드 패널 가드 반영
 
   // 모든 효과들의 애니메이션 업데이트 (고성능 최적화)
   useEffect(() => {
@@ -873,7 +878,10 @@ function MouseInteractiveComponent() {
         {/* 커서 따라다니는 이미지 - 고성능 최적화 */}
         {imageEffects.map((effect) => {
           // 화면 밖의 이미지는 렌더링하지 않음 (성능 향상)
-          const size = 40
+          // 속도 기반 크기: 빠를수록 기본 사이즈 증가
+          const baseSize = 28
+          const speedFactor = Math.min((effect.speed || 0) * 0.25, 60)
+          const size = baseSize + speedFactor
           const isVisible = effect.x > -size && effect.x < (typeof window !== 'undefined' ? window.innerWidth + size : 2000) &&
                            effect.y > -size && effect.y < (typeof window !== 'undefined' ? window.innerHeight + size : 2000)
           
@@ -901,11 +909,11 @@ function MouseInteractiveComponent() {
                 alt=""
                 className="w-full h-full object-cover"
                 style={{
-                  borderRadius: '15%',
-                  imageRendering: 'auto'
+                  borderRadius: '0%',
+                  imageRendering: 'crisp-edges'
                 }}
                 draggable={false}
-                loading="lazy"
+                loading="eager"
               />
             </div>
           )
@@ -1100,11 +1108,11 @@ function MouseInteractiveComponent() {
                       console.log('Upload button clicked')
                       fileInputRef.current?.click()
                     }}
-                    className={`bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg transition duration-300 transform hover:scale-105 shadow-lg ${
+                    className={`bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg transition duration-300 transform hover:scale-105 shadow-lg ${
                       isExpanded ? 'py-4 px-8 text-base' : 'py-2 px-4 text-sm'
                     }`}
                   >
-                    📁 SELECT FIVE IMAGES
+                    SELECT FIVE IMAGES
                   </button>
                   {isExpanded && (
                     <>
