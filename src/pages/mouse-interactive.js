@@ -1,6 +1,42 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import Head from 'next/head'
 import dynamic from 'next/dynamic'
+
+// 에러 경계 컴포넌트
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.log('Error caught by boundary:', error, errorInfo)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-black text-white flex items-center justify-center">
+          <div className="text-center">
+            <h2 className="text-2xl mb-4">⚡ Loading...</h2>
+            <button 
+              onClick={() => window.location.reload()} 
+              className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded"
+            >
+              새로고침
+            </button>
+          </div>
+        </div>
+      )
+    }
+
+    return this.props.children
+  }
+}
 
 function MouseInteractiveComponent() {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
@@ -33,8 +69,29 @@ function MouseInteractiveComponent() {
     if (typeof window !== 'undefined') {
       try {
         audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)()
+        console.log('🎵 Audio context initialized:', audioContextRef.current.state)
+        
+        // 사용자 상호작용 시 오디오 컨텍스트 활성화
+        const enableAudio = () => {
+          if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+            audioContextRef.current.resume().then(() => {
+              console.log('🎵 Audio context enabled by user interaction')
+            })
+          }
+        }
+        
+        // 클릭, 터치, 키보드 이벤트로 오디오 활성화
+        document.addEventListener('click', enableAudio)
+        document.addEventListener('touchstart', enableAudio)
+        document.addEventListener('keydown', enableAudio)
+        
+        return () => {
+          document.removeEventListener('click', enableAudio)
+          document.removeEventListener('touchstart', enableAudio)
+          document.removeEventListener('keydown', enableAudio)
+        }
       } catch (error) {
-        console.log('Web Audio API not supported')
+        console.log('❌ Web Audio API not supported:', error)
       }
     }
   }, [])
@@ -45,6 +102,57 @@ function MouseInteractiveComponent() {
       setShowImageUpload(false)
     }
   }, [uploadedImages])
+
+  // 모션 기반 간단한 사운드 함수
+  const playMotionSound = (speed) => {
+    console.log(`🎵 playMotionSound called with speed: ${speed}`)
+    
+    if (!audioContextRef.current) {
+      console.log('❌ No audio context available')
+      return
+    }
+
+    const audioContext = audioContextRef.current
+    console.log(`🎵 Audio context state: ${audioContext.state}`)
+    
+    // 오디오 컨텍스트가 suspended 상태면 resume
+    if (audioContext.state === 'suspended') {
+      console.log('🔄 Resuming suspended audio context')
+      audioContext.resume().then(() => {
+        console.log('✅ Audio context resumed successfully')
+      }).catch(err => {
+        console.log('❌ Failed to resume audio context:', err)
+      })
+    }
+    
+    try {
+      // 속도에 따른 볼륨 조절 (느리면 작은 소리, 빠르면 큰 소리)
+      const volume = Math.min(0.4, 0.05 + speed * 0.01)
+      
+      // 속도에 따른 주파수 조절 (느리면 낮은 음, 빠르면 높은 음)
+      const baseFreq = 200 + Math.min(speed * 6, 400) // 200Hz ~ 600Hz
+      
+      const oscillator = audioContext.createOscillator()
+      const gainNode = audioContext.createGain()
+      
+      oscillator.frequency.setValueAtTime(baseFreq, audioContext.currentTime)
+      oscillator.type = 'sine' // 부드러운 사인파
+      
+      gainNode.gain.setValueAtTime(volume, audioContext.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.1) // 빠른 페이드아웃
+      
+      oscillator.connect(gainNode)
+      gainNode.connect(audioContext.destination)
+      
+      oscillator.start(audioContext.currentTime)
+      oscillator.stop(audioContext.currentTime + 0.1)
+      
+      console.log(`✅ Motion sound generated: freq=${baseFreq.toFixed(0)}Hz, vol=${volume.toFixed(2)}`)
+      
+    } catch (error) {
+      console.log('❌ Motion sound failed:', error)
+    }
+  }
 
   // 랜덤 소리 생성 함수들
   const playClickSound = (intensity = 1, imageIndex = 0) => {
@@ -156,58 +264,6 @@ function MouseInteractiveComponent() {
     randomSound()
   }
 
-  // 마우스 속도 기반 사운드 (느림=작은소리, 빠름=크고맑은소리)
-  const playMotionSound = (speed = 0, deltaX = 0, imageIndex = 0) => {
-    if (!audioContextRef.current) return
-
-    const audioContext = audioContextRef.current
-    if (audioContext.state === 'suspended') {
-      audioContext.resume()
-    }
-
-    // 속도에 따른 볼륨: 느리면 작게(0.02), 빠르면 크게(0.4)
-    const clampedSpeed = Math.min(speed, 80)
-    const volume = 0.02 + (clampedSpeed / 80) * 0.38 // 0.02 ~ 0.4로 더 큰 차이
-    
-    // 속도에 따른 주파수: 느리면 낮은음(150Hz), 빠르면 높고 맑은음(800Hz)
-    const baseFreq = 150 + (clampedSpeed / 80) * 650 // 150Hz ~ 800Hz
-    const dirBend = deltaX > 0 ? 1.1 : 0.9 // 방향에 따른 미세한 피치 변화
-    const freq = baseFreq * dirBend
-
-    const oscillator = audioContext.createOscillator()
-    const gainNode = audioContext.createGain()
-    const filter = audioContext.createBiquadFilter()
-
-    oscillator.connect(filter)
-    filter.connect(gainNode)
-    gainNode.connect(audioContext.destination)
-
-    // 속도에 따른 필터 설정: 빠를수록 더 맑고 선명한 소리
-    filter.type = 'lowpass'
-    const filterFreq = 400 + (clampedSpeed / 80) * 1600 // 400Hz ~ 2000Hz
-    filter.frequency.setValueAtTime(filterFreq, audioContext.currentTime)
-    filter.Q.setValueAtTime(1.5, audioContext.currentTime) // 더 선명한 소리
-
-    // 웨이브 타입도 속도에 따라 변경: 느리면 부드러운 sine, 빠르면 밝은 triangle
-    oscillator.type = speed > 15 ? 'triangle' : 'sine'
-    oscillator.frequency.setValueAtTime(freq, audioContext.currentTime)
-
-    // 사운드 지속시간과 페이드: 속도에 따라 조절
-    const duration = speed > 20 ? 0.12 : 0.08
-    const now = audioContext.currentTime
-    
-    gainNode.gain.setValueAtTime(0, now)
-    gainNode.gain.linearRampToValueAtTime(volume, now + 0.01) // 빠른 어택
-    gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration) // 부드러운 릴리즈
-
-    oscillator.start(now)
-    oscillator.stop(now + duration)
-
-    // 디버그용 로그 (속도에 따른 사운드 확인)
-    if (Math.random() < 0.1) { // 10% 확률로 로그
-      console.log(`🔊 Sound: speed=${speed.toFixed(1)}, vol=${volume.toFixed(2)}, freq=${freq.toFixed(0)}Hz`)
-    }
-  }
 
   // 마우스 움직임 추적 - 고성능 최적화
   useEffect(() => {
@@ -232,12 +288,32 @@ function MouseInteractiveComponent() {
         setMouseSpeed(speed)
         setLastMousePos(newPosition)
         setLastMouseTime(currentTime)
+        
+        // 속도에 따른 모션 사운드 재생 (recreate 모드가 아닐 때만)
+        // 디버깅 로그
+        if (speed > 0.5) {
+          console.log(`🔍 Sound Debug: isRecreateMode=${isRecreateMode}, uploadedImages=${uploadedImages.length}, speed=${speed.toFixed(2)}`)
+        }
+        
+        if (!isRecreateMode && uploadedImages.length > 0 && speed > 0.5) { // 임계값을 0.5로 낮춤
+          const now = Date.now()
+          // 속도에 따라 사운드 빈도 조절 (너무 자주 재생되지 않도록)
+          const soundInterval = Math.max(50, 200 - speed * 5) // 빠를수록 자주 재생
+          if (now - lastMotionSoundTimeRef.current >= soundInterval) {
+            lastMotionSoundTimeRef.current = now
+            console.log(`🔊 Playing motion sound: speed=${speed.toFixed(2)}`)
+            playMotionSound(speed)
+          }
+        }
 
          // 이미지 생성 - 업로드 패널을 숨긴 뒤에만 동작, 속도에 비례해 길이 증가(느리면 짧음/빠르면 김)
-         if (!showImageUpload && uploadedImages.length > 0 && speed > 0.1) { // 임계값 낮춤
+         if (!showImageUpload && uploadedImages.length > 0 && speed > 0.01) { // 임계값 대폭 낮춤
           const nowPerf = typeof performance !== 'undefined' ? performance.now() : Date.now()
-          // 프레임당 1회만 생성 (약 60~80fps)
-          if (nowPerf - lastEffectTimeRef.current >= 12) {
+          // 속도에 따라 생성 빈도 조절 - 빠를수록 더 자주 생성
+          const speedMultiplier = Math.min(speed * 0.5, 5) // 속도 배율
+          const baseInterval = 8 // 기본 간격을 더 짧게
+          const adaptiveInterval = Math.max(2, baseInterval - speedMultiplier) // 최소 2ms까지 단축
+          if (nowPerf - lastEffectTimeRef.current >= adaptiveInterval) {
             lastEffectTimeRef.current = nowPerf
 
             const randomIndex = Math.floor(Math.random() * uploadedImages.length)
@@ -265,16 +341,11 @@ function MouseInteractiveComponent() {
                 rotation: 0
               }
 
-              // 최대 개수 제한으로 메모리 사용량 관리 (더 낮춰서 버벅임 완화)
+              // 최대 개수 제한으로 메모리 사용량 관리
               const maxEffects = 100
               return [...prev, newEffect].slice(-maxEffects)
             })
 
-             // 마우스 속도 기반 모션 사운드 (더 자주 재생되도록 간격 단축)
-             if (nowPerf - lastMotionSoundTimeRef.current >= 8) { // 24ms -> 8ms로 단축
-               lastMotionSoundTimeRef.current = nowPerf
-               playMotionSound(speed, deltaX, randomIndex)
-             }
           }
         }
 
@@ -453,7 +524,7 @@ function MouseInteractiveComponent() {
       window.removeEventListener('mousedown', handleMouseDown)
       window.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [uploadedImages, effectMode, lastMousePos, lastMouseTime, showImageUpload]) // 업로드 패널 가드 반영
+  }, [uploadedImages, effectMode, lastMousePos, lastMouseTime, showImageUpload, isRecreateMode]) // recreate 모드도 반영
 
   // 모든 효과들의 애니메이션 업데이트 (고성능 최적화)
   useEffect(() => {
@@ -1380,14 +1451,22 @@ function MouseInteractiveComponent() {
   )
 }
 
+// 에러 경계로 감싼 컴포넌트
+const WrappedComponent = () => (
+  <ErrorBoundary>
+    <MouseInteractiveComponent />
+  </ErrorBoundary>
+)
+
 // 클라이언트 사이드에서만 렌더링되도록 동적 import 사용
-const MouseInteractive = dynamic(() => Promise.resolve(MouseInteractiveComponent), {
+const MouseInteractive = dynamic(() => Promise.resolve(WrappedComponent), {
   ssr: false,
   loading: () => (
     <div className="min-h-screen bg-black text-white flex items-center justify-center">
       <div className="text-center">
-        <div className="text-4xl mb-4">🖱️</div>
-        <div className="text-xl">Loading Mouse Interactive...</div>
+        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-white mb-4 mx-auto"></div>
+        <div className="text-xl">⚡ Loading Mouse Control...</div>
+        <div className="text-sm mt-2 opacity-60">잠시만 기다려주세요...</div>
       </div>
     </div>
   )
