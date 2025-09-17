@@ -58,6 +58,9 @@ function MouseInteractiveComponent() {
   const [extremeMode, setExtremeMode] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
   const [isRecreateMode, setIsRecreateMode] = useState(false) // 재생성 모드
+  const [mergedImages, setMergedImages] = useState([]) // 합쳐진 이미지들
+  const [currentSoundPattern, setCurrentSoundPattern] = useState(null) // 현재 재생 중인 사운드 패턴
+  const [soundTriggerTime, setSoundTriggerTime] = useState(0) // 사운드 트리거 시간
   const canvasRef = useRef(null)
   const fileInputRef = useRef(null)
   const audioContextRef = useRef(null)
@@ -151,6 +154,136 @@ function MouseInteractiveComponent() {
       
     } catch (error) {
       console.log('❌ Motion sound failed:', error)
+    }
+  }
+
+  // recreate 모드에서 클릭 강도에 따른 다양한 합성 효과음 (최적화)
+  const playMergeSound = (intensity = 1, clickType = 'normal') => {
+    if (!audioContextRef.current) return
+
+    const audioContext = audioContextRef.current
+    
+    // 오디오 컨텍스트 상태 확인 및 즉시 복구
+    if (audioContext.state === 'suspended') {
+      audioContext.resume()
+    }
+    
+    // 🚀 즉시 사운드 시작 (지연 없음)
+    
+    try {
+      // 클릭마다 다른 사운드 패턴 (12가지 다양한 패턴)
+      const soundPatterns = [
+        // 패턴 1: 상승하는 아르페지오
+        { frequencies: [220, 277, 330, 415], duration: 0.7, volume: 0.3 * intensity, wave: 'sine', pattern: 'ascending' },
+        // 패턴 2: 하강하는 화음
+        { frequencies: [880, 660, 495, 370], duration: 0.8, volume: 0.25 * intensity, wave: 'triangle', pattern: 'descending' },
+        // 패턴 3: 펜타토닉 스케일
+        { frequencies: [293, 330, 415, 554], duration: 0.6, volume: 0.35 * intensity, wave: 'sawtooth', pattern: 'pentatonic' },
+        // 패턴 4: 마이너 코드
+        { frequencies: [220, 261, 330, 392], duration: 0.9, volume: 0.28 * intensity, wave: 'sine', pattern: 'minor' },
+        // 패턴 5: 메이저 코드
+        { frequencies: [261, 329, 392, 523], duration: 0.8, volume: 0.32 * intensity, wave: 'triangle', pattern: 'major' },
+        // 패턴 6: 디미니시드 코드
+        { frequencies: [277, 330, 392, 466], duration: 0.7, volume: 0.3 * intensity, wave: 'square', pattern: 'diminished' },
+        // 패턴 7: 재즈 코드
+        { frequencies: [220, 277, 369, 554], duration: 1.0, volume: 0.25 * intensity, wave: 'sine', pattern: 'jazz' },
+        // 패턴 8: 블루스 스케일
+        { frequencies: [220, 246, 293, 369, 415], duration: 0.9, volume: 0.3 * intensity, wave: 'sawtooth', pattern: 'blues' },
+        // 패턴 9: 오리엔탈 스케일
+        { frequencies: [261, 294, 369, 415, 523], duration: 0.8, volume: 0.28 * intensity, wave: 'triangle', pattern: 'oriental' },
+        // 패턴 10: 아라비안 스케일
+        { frequencies: [220, 246, 311, 370, 466], duration: 0.7, volume: 0.32 * intensity, wave: 'sine', pattern: 'arabian' },
+        // 패턴 11: 테크노 사운드
+        { frequencies: [110, 220, 440, 880], duration: 0.5, volume: 0.4 * intensity, wave: 'square', pattern: 'techno' },
+        // 패턴 12: 앰비언트 사운드
+        { frequencies: [130, 195, 260, 390, 520], duration: 1.2, volume: 0.2 * intensity, wave: 'sine', pattern: 'ambient' }
+      ]
+      
+      // 클릭 위치와 시간을 기반으로 패턴 선택 (매번 다르게)
+      const patternIndex = (Date.now() + Math.floor(intensity * 100)) % soundPatterns.length
+      const selectedPattern = soundPatterns[patternIndex]
+      
+      const frequencies = selectedPattern.frequencies
+      const oscillators = []
+      const gainNodes = []
+      
+      // 🚀 병렬 사운드 생성으로 즉각 반응 - 선택된 패턴 사용
+      frequencies.forEach((freq, index) => {
+        const oscillator = audioContext.createOscillator()
+        const gainNode = audioContext.createGain()
+        const delay = index * Math.max(0.01, 0.02 / intensity) // 최소 지연으로 즉각 반응
+        
+        oscillator.connect(gainNode)
+        gainNode.connect(audioContext.destination)
+        
+        // 기본 주파수 설정
+        oscillator.frequency.setValueAtTime(freq, audioContext.currentTime)
+        
+        // 즉시 볼륨 시작 - 패턴별 설정 사용
+        gainNode.gain.setValueAtTime(selectedPattern.volume * 0.3, audioContext.currentTime)
+        gainNode.gain.exponentialRampToValueAtTime(selectedPattern.volume, audioContext.currentTime + 0.05)
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + selectedPattern.duration)
+        
+        // 패턴별 웨이브 타입 설정
+        oscillator.type = selectedPattern.wave
+        
+        // 패턴별 특별한 효과
+        if (selectedPattern.pattern === 'ascending') {
+          // 상승 패턴: 주파수가 점진적으로 올라감
+          oscillator.frequency.exponentialRampToValueAtTime(freq * 1.5, audioContext.currentTime + selectedPattern.duration * 0.8)
+        } else if (selectedPattern.pattern === 'descending') {
+          // 하강 패턴: 주파수가 점진적으로 내려감
+          oscillator.frequency.exponentialRampToValueAtTime(freq * 0.7, audioContext.currentTime + selectedPattern.duration * 0.8)
+        } else if (selectedPattern.pattern === 'techno') {
+          // 테크노: 빠른 진동 효과
+          oscillator.frequency.setValueAtTime(freq, audioContext.currentTime)
+          for (let i = 0; i < 5; i++) {
+            const time = audioContext.currentTime + (i * 0.1)
+            oscillator.frequency.setValueAtTime(freq * (1 + Math.sin(i) * 0.1), time)
+          }
+        }
+        
+        oscillator.start(audioContext.currentTime)
+        oscillator.stop(audioContext.currentTime + selectedPattern.duration)
+        
+        oscillators.push(oscillator)
+        gainNodes.push(gainNode)
+      })
+      
+      // 패턴별 특별한 마무리 효과
+      if (['major', 'minor', 'jazz', 'ambient'].includes(selectedPattern.pattern)) {
+        setTimeout(() => {
+          const resonanceOsc = audioContext.createOscillator()
+          const resonanceGain = audioContext.createGain()
+          
+          resonanceOsc.connect(resonanceGain)
+          resonanceGain.connect(audioContext.destination)
+          
+          // 패턴의 첫 번째 주파수의 옥타브 위
+          const resonanceFreq = selectedPattern.frequencies[0] * 2
+          resonanceOsc.frequency.setValueAtTime(resonanceFreq, audioContext.currentTime)
+          resonanceGain.gain.setValueAtTime(selectedPattern.volume * 0.3, audioContext.currentTime)
+          resonanceGain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + selectedPattern.duration)
+          
+          resonanceOsc.type = 'sine'
+          resonanceOsc.start(audioContext.currentTime)
+          resonanceOsc.stop(audioContext.currentTime + selectedPattern.duration)
+        }, Math.floor(selectedPattern.duration * 300))
+      }
+      
+      // 현재 사운드 패턴 정보를 상태에 저장 (이미지 반응을 위해)
+      setCurrentSoundPattern({
+        pattern: selectedPattern,
+        intensity: intensity,
+        patternIndex: patternIndex,
+        timestamp: Date.now()
+      })
+      setSoundTriggerTime(Date.now())
+      
+      console.log(`🎵 Pattern ${patternIndex + 1}: ${selectedPattern.pattern.toUpperCase()} sound played (intensity: ${intensity.toFixed(2)})`)
+      
+    } catch (error) {
+      console.log('❌ Merge sound failed:', error)
     }
   }
 
@@ -265,9 +398,9 @@ function MouseInteractiveComponent() {
   }
 
 
-  // 마우스 움직임 추적 - 고성능 최적화
+  // 마우스 움직임 추적 - 초고성능 최적화
   useEffect(() => {
-    let mouseMoveThrottle = false
+    let lastFrameTime = 0
     
     const handleMouseMove = (e) => {
       const newPosition = { x: e.clientX, y: e.clientY }
@@ -275,9 +408,10 @@ function MouseInteractiveComponent() {
       // 즉시 커서 위치만 업데이트 (가장 중요한 반응성)
       setMousePosition(newPosition)
       
-      // 나머지 계산은 쓰로틀링으로 성능 향상
-      if (mouseMoveThrottle) return
-      mouseMoveThrottle = true
+      // 고성능 RAF 쓰로틀링 (60fps 보장)
+      const currentTime = performance.now()
+      if (currentTime - lastFrameTime < 8) return // 8ms = 120fps 제한
+      lastFrameTime = currentTime
       
       requestAnimationFrame(() => {
         const currentTime = Date.now()
@@ -289,43 +423,73 @@ function MouseInteractiveComponent() {
         setLastMousePos(newPosition)
         setLastMouseTime(currentTime)
         
-        // 속도에 따른 모션 사운드 재생 (recreate 모드가 아닐 때만)
-        // 디버깅 로그
-        if (speed > 0.5) {
-          console.log(`🔍 Sound Debug: isRecreateMode=${isRecreateMode}, uploadedImages=${uploadedImages.length}, speed=${speed.toFixed(2)}`)
-        }
-        
-        if (!isRecreateMode && uploadedImages.length > 0 && speed > 0.5) { // 임계값을 0.5로 낮춤
-          const now = Date.now()
-          // 속도에 따라 사운드 빈도 조절 (너무 자주 재생되지 않도록)
-          const soundInterval = Math.max(50, 200 - speed * 5) // 빠를수록 자주 재생
+        // 속도에 따른 모션 사운드 재생 - 초고속 반응
+        if (!isRecreateMode && uploadedImages.length > 0 && speed > 0.1) { // 임계값 대폭 낮춤
+          const now = performance.now() // Date.now() 대신 performance.now() 사용
+          // 매우 빠른 반응 - 속도에 따라 사운드 빈도 조절
+          const soundInterval = Math.max(15, 80 - speed * 3) // 기본 간격을 대폭 단축
           if (now - lastMotionSoundTimeRef.current >= soundInterval) {
             lastMotionSoundTimeRef.current = now
-            console.log(`🔊 Playing motion sound: speed=${speed.toFixed(2)}`)
             playMotionSound(speed)
           }
         }
 
-         // 이미지 생성 - 업로드 패널을 숨긴 뒤에만 동작, 속도에 비례해 길이 증가(느리면 짧음/빠르면 김)
-         if (!showImageUpload && uploadedImages.length > 0 && speed > 0.01) { // 임계값 대폭 낮춤
-          const nowPerf = typeof performance !== 'undefined' ? performance.now() : Date.now()
-          // 속도에 따라 생성 빈도 조절 - 빠를수록 더 자주 생성
-          const speedMultiplier = Math.min(speed * 0.5, 5) // 속도 배율
-          const baseInterval = 8 // 기본 간격을 더 짧게
-          const adaptiveInterval = Math.max(2, baseInterval - speedMultiplier) // 최소 2ms까지 단축
+         // 이미지 생성 - recreate 모드가 아닐 때만 생성
+         if (!isRecreateMode && !showImageUpload && uploadedImages.length > 0 && speed > 0.01) {
+          const nowPerf = performance.now()
+          // 매우 빠른 생성 간격 - 거의 실시간
+          const speedMultiplier = Math.min(speed * 0.8, 8) // 속도 배율 증가
+          const baseInterval = 3 // 기본 간격을 매우 짧게
+          const adaptiveInterval = Math.max(1, baseInterval - speedMultiplier) // 최소 1ms까지 단축
           if (nowPerf - lastEffectTimeRef.current >= adaptiveInterval) {
             lastEffectTimeRef.current = nowPerf
 
             const randomIndex = Math.floor(Math.random() * uploadedImages.length)
             const selectedImage = uploadedImages[randomIndex]
 
-            // 세로/가로 중 하나로 길게. 속도에 비례한 길이, 반대축은 얇게 처리
-            const orientationIsVertical = Math.random() < 0.5
-            const elongation = 1 + Math.min(speed * 0.15, 8) // 속도가 빠를수록 더 길게
-            const thickness = 0.6 // 얇게 보이도록
+            // 세로/가로 중 하나로 길게. 완전히 랜덤한 방향 선택
+            const randomOrientation = Math.random() // 새로운 랜덤 값 생성
+            const orientationIsVertical = randomOrientation < 0.5 // 50% 확률로 세로/가로 결정
+            
+            // 속도와 방향에 따른 길이 계산
+            const baseElongation = 1 + Math.min(speed * 0.3, 15)
+            const elongation = baseElongation + (Math.random() - 0.5) * 2 // ±1 정도의 변화
+            
+            // 굵기를 완전히 랜덤하게 - 골고루 분포하도록 개선
+            const thicknessOptions = {
+              ultraThin: { value: 0.15, weight: 15 },    // 초극세 (15% 확률)
+              veryThin: { value: 0.25, weight: 20 },     // 극세 (20% 확률)
+              thin: { value: 0.4, weight: 25 },          // 얇음 (25% 확률)
+              medium: { value: 0.6, weight: 20 },        // 중간 (20% 확률)
+              thick: { value: 0.8, weight: 12 },         // 두꺼움 (12% 확률)
+              veryThick: { value: 1.0, weight: 6 },      // 매우 두꺼움 (6% 확률)
+              ultraThick: { value: 1.3, weight: 2 }      // 초극세 (2% 확률)
+            }
+            
+            // 가중치 기반 랜덤 선택
+            const totalWeight = Object.values(thicknessOptions).reduce((sum, option) => sum + option.weight, 0)
+            let randomWeight = Math.random() * totalWeight
+            let selectedThickness = 0.4 // 기본값
+            
+            for (const [key, option] of Object.entries(thicknessOptions)) {
+              randomWeight -= option.weight
+              if (randomWeight <= 0) {
+                selectedThickness = option.value
+                break
+              }
+            }
+            
+            // 속도에 따른 굵기 조정 (빠를수록 더 극단적인 굵기 가능)
+            const speedFactor = Math.min(speed / 15, 1)
+            const speedAdjustment = 1 + (Math.random() - 0.5) * speedFactor * 0.6 // 속도에 따라 ±30% 변화
+            
+            // 방향에 따른 미세 조정 (마우스 이동 각도 고려)
+            const directionVariation = Math.random() * 0.3 - 0.15 // ±15% 변화
+            
+            const finalThickness = Math.max(0.1, selectedThickness * speedAdjustment * (1 + directionVariation))
 
-            const scaleX = orientationIsVertical ? thickness : elongation
-            const scaleY = orientationIsVertical ? elongation : thickness
+            const scaleX = orientationIsVertical ? finalThickness : elongation
+            const scaleY = orientationIsVertical ? elongation : finalThickness
 
             setImageEffects(prev => {
               const newEffect = {
@@ -341,9 +505,8 @@ function MouseInteractiveComponent() {
                 rotation: 0
               }
 
-              // 최대 개수 제한으로 메모리 사용량 관리
-              const maxEffects = 100
-              return [...prev, newEffect].slice(-maxEffects)
+            // 이미지는 영구적으로 유지 (사라지지 않음)
+            return [...prev, newEffect]
             })
 
           }
@@ -377,7 +540,7 @@ function MouseInteractiveComponent() {
           }].slice(-2)) // 개수 더 제한
         }
         
-        mouseMoveThrottle = false
+        // 쓰로틀링 제거 - 더 이상 필요 없음
       })
     }
 
@@ -392,17 +555,131 @@ function MouseInteractiveComponent() {
       }
       setClickHistory(prev => [...prev, clickData].slice(-10))
 
-      // 이미지가 있으면 소리 재생 (클릭 버튼에 따라 다른 강도)
-      if (uploadedImages.length > 0) {
-        const buttonIntensity = e.button === 0 ? 0.7 : e.button === 2 ? 1.0 : 0.5 // 왼쪽/오른쪽/휠 클릭
-        const intensity = buttonIntensity + Math.random() * 0.3
-        const randomImageIndex = Math.floor(Math.random() * uploadedImages.length)
-        playClickSound(intensity, randomImageIndex)
-        console.log(`Playing ${e.button === 0 ? 'left' : e.button === 2 ? 'right' : 'middle'} click sound`)
+      // recreate 모드에서 클릭 시 즉각적인 반응
+      if (isRecreateMode && uploadedImages.length > 0) {
+        // 클릭 강도 계산 (위치, 클릭 버튼, 타이밍)
+        const clickX = e.clientX
+        const clickY = e.clientY
+        const timeBasedIntensity = (Date.now() % 1000) / 1000 // 시간에 따른 변화
+        const positionIntensity = (clickX + clickY) % 100 / 50 // 위치에 따른 변화
+        const buttonMultiplier = e.button === 0 ? 1 : e.button === 2 ? 1.5 : 0.8
+        const clickIntensity = (1 + timeBasedIntensity + positionIntensity) * buttonMultiplier
+        
+        // 강도에 따른 클릭 타입 결정
+        let clickType = 'light'
+        if (clickIntensity >= 3) clickType = 'extreme'
+        else if (clickIntensity >= 2.2) clickType = 'strong'
+        else if (clickIntensity >= 1.5) clickType = 'normal'
+        
+        // 🚀 즉각적인 사운드 재생 (이미지 계산보다 먼저)
+        playMergeSound(clickIntensity, clickType)
+        
+        // 주변 이미지 찾기 (사운드 이후에 처리)
+        const clickRadius = 150
+        const nearbyImages = imageEffects.filter(effect => {
+          const distance = Math.sqrt(
+            Math.pow(effect.x - clickX, 2) + Math.pow(effect.y - clickY, 2)
+          )
+          return distance <= clickRadius
+        })
+
+        if (nearbyImages.length > 0) {
+          console.log(`🔮 Merging ${nearbyImages.length} nearby images with ${clickType} intensity (${clickIntensity.toFixed(2)})`)
+
+          // 강도에 따른 새로운 합쳐진 이미지 생성
+          const intensityScale = Math.min(clickIntensity * 0.5, 2) // 강도에 따른 크기 배율
+          const intensityRotationSpeed = Math.min(clickIntensity * 0.8, 6) // 강도에 따른 회전 속도 (더 느리게)
+          
+          const mergedImage = {
+            id: `merged-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+            x: e.clientX,
+            y: e.clientY,
+            images: nearbyImages.map(img => img.image), // 합쳐진 이미지들의 배열
+            rotation: 0,
+            rotationSpeed: 0.5 + intensityRotationSpeed + Math.random() * 1, // 회전 속도를 대폭 느리게
+            scale: 1.2 + intensityScale + Math.random() * 0.3, // 강도에 따른 크기
+            opacity: Math.min(0.7 + clickIntensity * 0.1, 1), // 강도에 따른 투명도
+            timestamp: Date.now(),
+            permanent: true,
+            intensity: clickIntensity, // 강도 저장
+            clickType: clickType // 클릭 타입 저장
+          }
+
+          // 합쳐진 이미지 추가
+          setMergedImages(prev => [...prev, mergedImage])
+
+          // 합쳐진 이미지들을 기존 효과에서 제거
+          setImageEffects(prev => 
+            prev.filter(effect => !nearbyImages.some(nearby => nearby.id === effect.id))
+          )
+        } else {
+          // 주변에 합칠 이미지가 없을 때도 새로운 패턴 생성
+          console.log(`🎨 Creating new pattern with ${clickType} intensity (${clickIntensity.toFixed(2)})`)
+          
+          // 클릭 지점에 새로운 이미지 효과 생성 (패턴 구축)
+          const patternImages = Array.from({ length: Math.min(Math.floor(clickIntensity * 2), 6) }, (_, i) => {
+            const angle = (i / Math.floor(clickIntensity * 2)) * Math.PI * 2
+            const distance = 50 + clickIntensity * 30
+            const randomImage = uploadedImages[Math.floor(Math.random() * uploadedImages.length)]
+            
+            return {
+              id: `pattern-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 6)}`,
+              image: randomImage,
+              x: clickX + Math.cos(angle) * distance,
+              y: clickY + Math.sin(angle) * distance,
+              scaleX: 0.8 + clickIntensity * 0.3,
+              scaleY: 0.8 + clickIntensity * 0.3,
+              opacity: 0.7 + clickIntensity * 0.2,
+              permanent: true,
+              speed: clickIntensity,
+              rotation: angle * 180 / Math.PI,
+              timestamp: Date.now()
+            }
+          })
+          
+          // 새로운 패턴 이미지들 추가
+          setImageEffects(prev => [...prev, ...patternImages])
+          
+          // 기존 이미지들도 변형
+          const transformRadius = 150 + clickIntensity * 50
+          setImageEffects(prev => 
+            prev.map(effect => {
+              if (!effect.permanent || patternImages.some(p => p.id === effect.id)) return effect
+              
+              const dx = clickX - effect.x
+              const dy = clickY - effect.y
+              const distance = Math.sqrt(dx * dx + dy * dy)
+              
+              if (distance <= transformRadius) {
+                const influence = Math.max(0, (transformRadius - distance) / transformRadius)
+                const transformStrength = influence * clickIntensity
+                const angle = Math.atan2(dy, dx)
+                
+                return {
+                  ...effect,
+                  scaleX: Math.max(0.3, Math.min(4, effect.scaleX + transformStrength * 0.5)),
+                  scaleY: Math.max(0.3, Math.min(4, effect.scaleY + transformStrength * 0.5)),
+                  rotation: effect.rotation + angle * 15 * influence,
+                  opacity: Math.max(0.5, Math.min(1, effect.opacity + influence * 0.2))
+                }
+              }
+              return effect
+            })
+          )
+        }
+      } else {
+        // 일반 모드에서는 기존 클릭 사운드
+        if (uploadedImages.length > 0) {
+          const buttonIntensity = e.button === 0 ? 0.7 : e.button === 2 ? 1.0 : 0.5 // 왼쪽/오른쪽/휠 클릭
+          const intensity = buttonIntensity + Math.random() * 0.3
+          const randomImageIndex = Math.floor(Math.random() * uploadedImages.length)
+          playClickSound(intensity, randomImageIndex)
+          console.log(`Playing ${e.button === 0 ? 'left' : e.button === 2 ? 'right' : 'middle'} click sound`)
+        }
       }
 
-      // 클릭 시 강력한 리플 효과 (리플 모드이거나 전체 모드일 때)
-      if (effectMode === 'ripple' || effectMode === 'all') {
+      // 클릭 시 강력한 리플 효과 (리플 모드이거나 전체 모드일 때) - recreate 모드에서는 비활성화
+      if (!isRecreateMode && (effectMode === 'ripple' || effectMode === 'all')) {
         const rippleColors = ['#ff006e', '#8338ec', '#3a86ff', '#06ffa5', '#ffbe0b']
         const rippleCount = e.button === 0 ? 3 : e.button === 2 ? 5 : 2
         
@@ -423,8 +700,8 @@ function MouseInteractiveComponent() {
         }
       }
 
-      // 클릭 시 폭발형 스파클 효과 (스파클 모드이거나 전체 모드일 때) - 성능 최적화
-      if (effectMode === 'sparkle' || effectMode === 'all') {
+      // 클릭 시 폭발형 스파클 효과 (스파클 모드이거나 전체 모드일 때) - recreate 모드에서는 비활성화
+      if (!isRecreateMode && (effectMode === 'sparkle' || effectMode === 'all')) {
         const sparkleCount = extremeMode ? 10 : 8
         const explosionSparkles = Array.from({ length: sparkleCount }, (_, i) => {
           const angle = (i / sparkleCount) * Math.PI * 2
@@ -445,10 +722,10 @@ function MouseInteractiveComponent() {
         setSparkles(prev => [...prev, ...explosionSparkles].slice(-30)) // 성능 최적화: 개수 제한
       }
 
-      // 더블클릭 감지를 위한 특별 효과 (웨이브 모드이거나 전체 모드일 때)
+      // 더블클릭 감지를 위한 특별 효과 (웨이브 모드이거나 전체 모드일 때) - recreate 모드에서는 비활성화
       const now = Date.now()
       const recentClicks = clickHistory.filter(click => now - click.timestamp < 500)
-      if (recentClicks.length > 0 && (effectMode === 'wave' || effectMode === 'all')) {
+      if (!isRecreateMode && recentClicks.length > 0 && (effectMode === 'wave' || effectMode === 'all')) {
         // 더블클릭 시 특별한 웨이브 효과
         setWaves(prev => [...prev, {
           id: Math.random().toString(36),
@@ -462,8 +739,8 @@ function MouseInteractiveComponent() {
         }])
       }
 
-      // 클릭 시 이미지 폭발 효과 (이미지 모드이거나 전체 모드일 때) - 업로드 패널이 숨겨진 뒤에만 동작
-      if (!showImageUpload && uploadedImages.length > 0 && (effectMode === 'image' || effectMode === 'all')) {
+      // 클릭 시 이미지 폭발 효과 (이미지 모드이거나 전체 모드일 때) - recreate 모드에서는 비활성화
+      if (!isRecreateMode && !showImageUpload && uploadedImages.length > 0 && (effectMode === 'image' || effectMode === 'all')) {
         console.log(`Generating click image effects`)
         
         // 성능 최적화: 폭발 이미지 개수 제한
@@ -526,7 +803,7 @@ function MouseInteractiveComponent() {
     }
   }, [uploadedImages, effectMode, lastMousePos, lastMouseTime, showImageUpload, isRecreateMode]) // recreate 모드도 반영
 
-  // 모든 효과들의 애니메이션 업데이트 (고성능 최적화)
+  // 모든 효과들의 애니메이션 업데이트 (초고성능 최적화)
   useEffect(() => {
     let animationId
     let lastTime = performance.now()
@@ -534,8 +811,8 @@ function MouseInteractiveComponent() {
     const animate = (currentTime) => {
       const deltaTime = currentTime - lastTime
       
-      // 60fps로 제한 (16.67ms)
-      if (deltaTime >= 16.67) {
+      // 120fps로 제한 (8.33ms) - 더 부드러운 애니메이션
+      if (deltaTime >= 8.33) {
         const now = Date.now()
         
         // 배치 업데이트로 성능 향상
@@ -547,72 +824,132 @@ function MouseInteractiveComponent() {
           imageEffects: []
         }
         
-        // 트레일 포인트 정리 (간소화)
+        // 트레일 포인트 정리 (더욱 간소화)
         setTrailPoints(prev => {
-          updates.trailPoints = prev.filter(point => now - point.timestamp < 500) // 더 짧게
-          return updates.trailPoints.slice(-8) // 최대 8개만
+          updates.trailPoints = prev.filter(point => now - point.timestamp < 300) // 더 짧게
+          return updates.trailPoints.slice(-5) // 최대 5개만
         })
         
-        // 스파클 효과 간소화
+        // 스파클 효과 간소화 (성능 향상)
         setSparkles(prev => {
           updates.sparkles = prev
             .map(sparkle => ({
               ...sparkle,
               x: sparkle.x + (sparkle.velocityX || Math.cos(sparkle.angle) * sparkle.velocity),
               y: sparkle.y + (sparkle.velocityY || Math.sin(sparkle.angle) * sparkle.velocity),
-              life: sparkle.life - sparkle.decay,
-              size: sparkle.size * 0.99
+              life: sparkle.life - sparkle.decay * 1.5, // 더 빠른 소멸
+              size: sparkle.size * 0.98 // 더 빠른 축소
             }))
-            .filter(sparkle => sparkle.life > 0.1 && sparkle.size > 1)
-          return updates.sparkles.slice(-10) // 최대 10개만
+            .filter(sparkle => sparkle.life > 0.2 && sparkle.size > 2)
+          return updates.sparkles.slice(-6) // 최대 6개만
         })
         
-        // 리플/웨이브 효과 간소화
+        // 리플/웨이브 효과 대폭 간소화
         setRipples(prev => prev.filter(ripple => {
           const age = now - ripple.timestamp
-          return age < 800 // 더 빠른 제거
-        }).slice(-5)) // 최대 5개
+          return age < 500 // 더욱 빠른 제거
+        }).slice(-3)) // 최대 3개
         
         setWaves(prev => prev.filter(wave => {
           const age = now - wave.timestamp
-          return age < 600 // 더 빠른 제거
-        }).slice(-3)) // 최대 3개
+          return age < 400 // 더욱 빠른 제거
+        }).slice(-2)) // 최대 2개
         
-        // 이미지 효과 최적화 - Recreate 모드에서만 계산
-        if (isRecreateMode) {
-          setImageEffects(prev => {
-            const maxImages = 100 // 최대 이미지 수 제한
-            return prev
-              .map(effect => {
-                if (!effect.permanent) return effect
+        // recreate 모드에서는 마우스 움직임으로 이미지 변형하지 않음
+        // 클릭할 때만 변형이 일어남
+        
+        // 배치된 이미지들의 사운드 반응 (recreate 모드에서만)
+        if (isRecreateMode && currentSoundPattern && (now - soundTriggerTime < 1500)) {
+          setImageEffects(prev => 
+            prev.map(effect => {
+              if (!effect.permanent) return effect
+              
+              const timeSinceSound = now - soundTriggerTime
+              const reactionStrength = Math.max(0, 1 - (timeSinceSound / 1500))
+              
+              const pattern = currentSoundPattern.pattern
+              const intensity = currentSoundPattern.intensity
+              
+              // 이미지별로 다른 반응 (위치 기반)
+              const imageFreqIndex = Math.floor((effect.x + effect.y) % pattern.frequencies.length)
+              const imageFreq = pattern.frequencies[imageFreqIndex]
+              const normalizedFreq = (imageFreq - 200) / 600
+              
+              // 랜덤 움직임 (주파수에 따라)
+              const randomMovement = {
+                x: Math.sin(timeSinceSound * 0.02 + effect.x * 0.001) * normalizedFreq * 10 * reactionStrength,
+                y: Math.cos(timeSinceSound * 0.02 + effect.y * 0.001) * (1 - normalizedFreq) * 8 * reactionStrength
+              }
+              
+              // 크기 변화 (강도에 따라)
+              const scaleReaction = 1 + Math.sin(timeSinceSound * 0.03 + effect.id.length) * intensity * 0.2 * reactionStrength
+              
+              return {
+                ...effect,
+                x: (effect.originalX || effect.x) + randomMovement.x,
+                y: (effect.originalY || effect.y) + randomMovement.y,
+                scaleX: (effect.originalScaleX || effect.scaleX) * scaleReaction,
+                scaleY: (effect.originalScaleY || effect.scaleY) * scaleReaction,
+                originalX: effect.originalX || effect.x,
+                originalY: effect.originalY || effect.y,
+                originalScaleX: effect.originalScaleX || effect.scaleX,
+                originalScaleY: effect.originalScaleY || effect.scaleY
+              }
+            })
+          )
+        }
+
+        // 합쳐진 이미지들의 회전 애니메이션 및 사운드 반응 (최적화)
+        if (mergedImages.length > 0) {
+          setMergedImages(prev => 
+            prev.map(merged => {
+              let updatedMerged = {
+                ...merged,
+                rotation: merged.rotation + merged.rotationSpeed
+              }
+              
+              // 사운드 패턴에 따른 이미지 반응 (최근 1.5초 내 사운드에만 반응)
+              if (currentSoundPattern && (now - soundTriggerTime < 1500)) {
+                const timeSinceSound = now - soundTriggerTime
+                const reactionStrength = Math.max(0, 1 - (timeSinceSound / 1500)) // 시간이 지날수록 약해짐
                 
-                // 거리 계산 최적화
-                const dx = mousePosition.x - effect.x
-                const dy = mousePosition.y - effect.y
-                const distanceSquared = dx * dx + dy * dy
+                // 패턴별 다른 반응
+                const pattern = currentSoundPattern.pattern
+                const intensity = currentSoundPattern.intensity
                 
-                // 거리가 너무 멀면 변형하지 않음 (성능 향상)
-                if (distanceSquared > 90000) return effect // 300px^2
+                // 음의 높낮이에 따른 움직임 (주파수 기반)
+                const avgFrequency = pattern.frequencies.reduce((sum, freq) => sum + freq, 0) / pattern.frequencies.length
+                const normalizedFreq = (avgFrequency - 200) / 600 // 200~800Hz 범위를 0~1로 정규화
                 
-                const distance = Math.sqrt(distanceSquared)
-                const influence = Math.max(0, (300 - distance) / 300)
+                // 높은 음: 위로 움직임, 낮은 음: 아래로 움직임
+                const verticalOffset = Math.sin(timeSinceSound * 0.01) * normalizedFreq * 20 * reactionStrength
+                const horizontalOffset = Math.cos(timeSinceSound * 0.008) * (1 - normalizedFreq) * 15 * reactionStrength
                 
-                if (influence > 0.1) { // 최소 영향도 설정
-                  const mouseScale = 1 + influence * 1.5 // 변형 강도 줄임
-                  const angle = Math.atan2(dy, dx)
-                  
-                  return {
-                    ...effect,
-                    scaleX: Math.max(0.5, Math.min(3, effect.scaleX * 0.8 + mouseScale * 0.2)),
-                    scaleY: Math.max(0.5, Math.min(3, effect.scaleY * 0.8 + mouseScale * 0.2)),
-                    rotation: effect.rotation + angle * 10 * influence,
-                    opacity: Math.max(0.6, Math.min(1, 0.8 + influence * 0.2))
-                  }
+                // 음의 강도에 따른 크기 변화
+                const scaleVariation = 1 + Math.sin(timeSinceSound * 0.02) * intensity * 0.3 * reactionStrength
+                
+                // 패턴별 특별한 효과
+                let specialEffect = 1
+                if (pattern.pattern === 'ascending') {
+                  specialEffect = 1 + Math.sin(timeSinceSound * 0.05) * 0.2 * reactionStrength
+                } else if (pattern.pattern === 'descending') {
+                  specialEffect = 1 - Math.sin(timeSinceSound * 0.05) * 0.1 * reactionStrength
+                } else if (pattern.pattern === 'techno') {
+                  specialEffect = 1 + Math.sin(timeSinceSound * 0.1) * 0.4 * reactionStrength
                 }
-                return effect
-              })
-              .slice(-maxImages) // 최대 개수 제한
-          })
+                
+                updatedMerged = {
+                  ...updatedMerged,
+                  x: merged.x + horizontalOffset,
+                  y: merged.y + verticalOffset,
+                  scale: (merged.scale || 1) * scaleVariation * specialEffect,
+                  soundReaction: true // 사운드 반응 중임을 표시
+                }
+              }
+              
+              return updatedMerged
+            })
+          )
         }
         
         lastTime = currentTime
@@ -628,7 +965,7 @@ function MouseInteractiveComponent() {
         cancelAnimationFrame(animationId)
       }
     }
-  }, [isRecreateMode, mousePosition.x, mousePosition.y])
+  }, [isRecreateMode, mousePosition.x, mousePosition.y, mergedImages.length, currentSoundPattern, soundTriggerTime])
 
   // 마우스 위치를 기반으로 색상 생성
   const getColorFromPosition = (x, y) => {
@@ -1013,6 +1350,72 @@ function MouseInteractiveComponent() {
           }
         })}
 
+        {/* 합쳐진 이미지들 - 강도에 따른 다양한 회전 그룹들 */}
+        {mergedImages.map((merged) => {
+          const totalImages = merged.images.length
+          const baseSize = 120 * merged.scale // 강도에 따른 크기
+          
+          // 자연스러운 시각적 효과 (색상 제거)
+          const naturalEffects = {
+            light: { shadow: '0 2px 8px rgba(0, 0, 0, 0.2)' },
+            normal: { shadow: '0 4px 12px rgba(0, 0, 0, 0.3)' },
+            strong: { shadow: '0 6px 16px rgba(0, 0, 0, 0.4)' },
+            extreme: { shadow: '0 8px 20px rgba(0, 0, 0, 0.5)' }
+          }
+          
+          const currentEffect = naturalEffects[merged.clickType] || naturalEffects.normal
+          
+          return (
+            <div
+              key={merged.id}
+              className="fixed pointer-events-none z-45"
+              style={{
+                left: merged.x - baseSize / 2,
+                top: merged.y - baseSize / 2,
+                width: baseSize,
+                height: baseSize,
+                opacity: merged.opacity,
+                transform: `rotate(${merged.rotation}deg) scale(${1 + Math.sin(merged.rotation * 0.1) * 0.05})`, // 매우 미묘한 스케일 변화
+                transition: 'opacity 0.3s ease',
+                filter: `drop-shadow(${currentEffect.shadow})` // 자연스러운 그림자만
+              }}
+            >
+              {merged.images.map((image, index) => {
+                const angle = (index / totalImages) * Math.PI * 2
+                const radius = baseSize * 0.35
+                const imageSize = 60 + (merged.intensity * 10) // 강도에 따른 이미지 크기
+                
+                return (
+                  <div
+                    key={`${merged.id}-img-${index}`}
+                    className="absolute"
+                    style={{
+                      left: baseSize / 2 + Math.cos(angle) * radius - imageSize / 2,
+                      top: baseSize / 2 + Math.sin(angle) * radius - imageSize / 2,
+                      width: imageSize,
+                      height: imageSize,
+                      transform: `rotate(${-merged.rotation}deg)` // 개별 이미지는 반대 방향으로 회전해서 똑바로 유지
+                    }}
+                  >
+                    <img
+                      src={image.src}
+                      alt=""
+                      className="w-full h-full object-cover"
+                      style={{
+                        filter: `brightness(${1 + merged.intensity * 0.05}) contrast(${1 + merged.intensity * 0.05})`, // 자연스러운 밝기/대비만
+                        borderRadius: '0px'
+                      }}
+                      draggable={false}
+                    />
+                  </div>
+                )
+              })}
+              
+              {/* 중앙 효과 제거 - 자연스러운 회전만 */}
+            </div>
+          )
+        })}
+
         {/* 커서 따라다니는 이미지 - 고성능 최적화 */}
         {imageEffects.map((effect) => {
           // 화면 밖의 이미지는 렌더링하지 않음 (성능 향상)
@@ -1057,8 +1460,8 @@ function MouseInteractiveComponent() {
           )
         })}
 
-        {/* 클릭 효과 - 이미지가 있으면 이미지로, 없으면 기본 도형으로 */}
-        {clickHistory.map((click) => {
+        {/* 클릭 효과 - 이미지가 있으면 이미지로, 없으면 기본 도형으로 (recreate 모드에서는 비활성화) */}
+        {!isRecreateMode && clickHistory.map((click) => {
           const age = Date.now() - click.timestamp
           const size = getClickSize(age)
           const opacity = Math.max(0, 1 - (age / 2000))
